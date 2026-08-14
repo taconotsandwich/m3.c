@@ -25,30 +25,12 @@ static m3_status m3_host_copy(const m3_op_unary *op)
     return M3_STATUS_OK;
 }
 
-static bool m3_host_float_i32_valid(float value)
-{
-    return isfinite(value) && value >= -2147483648.0F &&
-           value < 2147483648.0F;
-}
-
-static m3_status m3_host_cast(const m3_op_unary *op, m3_error *error)
+static m3_status m3_host_cast(const m3_op_unary *op)
 {
     size_t index;
 
     if (op->input->metadata.dtype == op->output->metadata.dtype) {
         return m3_host_copy(op);
-    }
-    if (op->output->metadata.dtype == M3_DTYPE_I32 &&
-        op->input->metadata.dtype != M3_DTYPE_I32) {
-        for (index = 0U; index < op->input->metadata.element_count; ++index) {
-            float value = m3_op_load_float(
-                op->input, m3_op_element_offset(op->input, index));
-
-            if (!m3_host_float_i32_valid(value)) {
-                return m3_error_set(error, M3_STATUS_OUT_OF_RANGE,
-                                    "float-to-I32 cast value is invalid");
-            }
-        }
     }
     for (index = 0U; index < op->input->metadata.element_count; ++index) {
         size_t input_offset = m3_op_element_offset(op->input, index);
@@ -94,22 +76,11 @@ static m3_status m3_host_binary(const m3_op_binary *op, bool multiply)
     return M3_STATUS_OK;
 }
 
-static m3_status m3_host_embedding(const m3_op_embedding *op,
-                                   m3_error *error)
+static m3_status m3_host_embedding(const m3_op_embedding *op)
 {
     size_t token;
     size_t channels = (size_t)op->table->metadata.shape[1];
-    size_t vocabulary = (size_t)op->table->metadata.shape[0];
 
-    for (token = 0U; token < op->ids->metadata.element_count; ++token) {
-        int32_t id = m3_op_load_i32(
-            op->ids, m3_op_element_offset(op->ids, token));
-
-        if (id < 0 || (size_t)id >= vocabulary) {
-            return m3_error_set(error, M3_STATUS_OUT_OF_RANGE,
-                                "embedding ID is outside the vocabulary");
-        }
-    }
     for (token = 0U; token < op->ids->metadata.element_count; ++token) {
         int32_t id = m3_op_load_i32(
             op->ids, m3_op_element_offset(op->ids, token));
@@ -150,23 +121,13 @@ static m3_status m3_host_gated_silu(const m3_op_binary *op)
     return M3_STATUS_OK;
 }
 
-static m3_status m3_host_softmax(const m3_op_unary *op, m3_error *error)
+static m3_status m3_host_softmax(const m3_op_unary *op)
 {
     size_t total = op->input->metadata.element_count;
     size_t width = (size_t)op->input->metadata.shape[
         op->input->metadata.rank - 1U];
     size_t row;
-    size_t index;
 
-    for (index = 0U; index < total; ++index) {
-        float value = m3_op_load_float(
-            op->input, m3_op_element_offset(op->input, index));
-
-        if (isnan(value)) {
-            return m3_error_set(error, M3_STATUS_OUT_OF_RANGE,
-                                "softmax input contains NaN");
-        }
-    }
     for (row = 0U; row < total / width; ++row) {
         float maximum = -INFINITY;
         float sum = 0.0F;
@@ -223,22 +184,23 @@ m3_status m3_host_execute_basic(const m3_command *command,
                                 bool *handled, m3_error *error)
 {
     (void)scratch;
+    (void)error;
     *handled = true;
     switch (command->kind) {
     case M3_OP_COPY:
         return m3_host_copy(&command->descriptor.copy);
     case M3_OP_CAST:
-        return m3_host_cast(&command->descriptor.cast, error);
+        return m3_host_cast(&command->descriptor.cast);
     case M3_OP_ADD:
         return m3_host_binary(&command->descriptor.add, false);
     case M3_OP_MUL:
         return m3_host_binary(&command->descriptor.mul, true);
     case M3_OP_EMBEDDING:
-        return m3_host_embedding(&command->descriptor.embedding, error);
+        return m3_host_embedding(&command->descriptor.embedding);
     case M3_OP_GATED_SILU:
         return m3_host_gated_silu(&command->descriptor.gated_silu);
     case M3_OP_SOFTMAX:
-        return m3_host_softmax(&command->descriptor.softmax, error);
+        return m3_host_softmax(&command->descriptor.softmax);
     default:
         *handled = false;
         return M3_STATUS_OK;

@@ -150,6 +150,12 @@ void m3_test_op_conversions(m3_test_context *test)
                        memcmp(m3_op_test_i32(&invalid_output), sentinel_i32,
                               sizeof(sentinel_i32)) == 0,
                    "invalid float-to-I32 cast leaves all output unchanged");
+    M3_TEST_EXPECT(test,
+                   m3_op_test_execute(&fixture, &command, 1U, NULL, NULL) ==
+                           M3_STATUS_OUT_OF_RANGE &&
+                       memcmp(m3_op_test_i32(&invalid_output), sentinel_i32,
+                              sizeof(sentinel_i32)) == 0,
+                   "invalid data preflight works without an error sink");
     m3_op_test_fixture_dispose(&fixture);
 }
 

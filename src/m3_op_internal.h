@@ -50,6 +50,8 @@ m3_status m3_op_validate_convolution(const m3_backend *backend,
                                      bool *handled, m3_error *error);
 m3_status m3_op_command_scratch(const m3_command *command,
                                 size_t *byte_count, m3_error *error);
+m3_status m3_command_data_preflight(const m3_command *command,
+                                    m3_error *error);
 
 size_t m3_op_element_offset(const m3_tensor_view *view, size_t flat_index);
 size_t m3_op_broadcast_offset(const m3_tensor_view *input,
@@ -62,6 +64,11 @@ void m3_op_store_float(m3_tensor_view *view, size_t byte_offset,
                        float value);
 void m3_op_store_i32(m3_tensor_view *view, size_t byte_offset,
                      int32_t value);
+size_t m3_op_attention_offset(const m3_tensor_view *view, size_t batch,
+                              size_t head, size_t position, size_t depth);
+float m3_op_attention_score(const m3_op_attention *op, size_t batch,
+                            size_t query_head, size_t kv_head,
+                            size_t query, size_t key, size_t depth);
 
 m3_status m3_host_execute_basic(const m3_command *command,
                                 m3_scratch_arena *scratch,
