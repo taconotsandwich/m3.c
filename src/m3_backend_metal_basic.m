@@ -11,6 +11,8 @@ static const char m3_metal_cast_kernel[] = "m3_cast";
 static const char m3_metal_add_kernel[] = "m3_add";
 static const char m3_metal_mul_kernel[] = "m3_mul";
 static const char m3_metal_softmax_kernel[] = "m3_softmax";
+static const char m3_metal_snake1d_kernel[] = "m3_snake1d";
+static const char m3_metal_tanh_kernel[] = "m3_tanh";
 
 NSString *m3_metal_source_basic(void)
 {
@@ -60,7 +62,7 @@ NSString *m3_metal_source_basic(void)
             "  else m3_store_float_bits(output + dst, p.out_type, bits);\n"
             "}\n";
 
-    return [unary stringByAppendingString:
+    NSString *arithmetic = [unary stringByAppendingString:
         @"void m3_binary_apply(device const uchar* left, "
             "device const uchar* right, device uchar* output, "
             "constant M3ViewParameters& left_view, "
@@ -143,6 +145,51 @@ NSString *m3_metal_source_basic(void)
             "output + dst, output_view.dtype, probability);\n"
             "  }\n"
             "}\n"];
+
+    return [arithmetic stringByAppendingString:
+        @"#pragma clang fp contract(off)\n"
+         "kernel void m3_snake1d(\n"
+         "    device const uchar* input [[buffer(0)]],\n"
+         "    device const uchar* alpha [[buffer(1)]],\n"
+         "    device uchar* output [[buffer(2)]],\n"
+         "    constant M3ViewParameters& input_view [[buffer(3)]],\n"
+         "    constant M3ViewParameters& alpha_view [[buffer(4)]],\n"
+         "    constant M3ViewParameters& output_view [[buffer(5)]],\n"
+         "    uint gid [[thread_position_in_grid]]) {\n"
+         "  ulong flat = ulong(gid);\n"
+         "  if (flat >= input_view.element_count) return;\n"
+         "  ulong channel = (flat / input_view.shape[2]) %\n"
+         "    input_view.shape[1];\n"
+         "  ulong input_at = m3_view_logical_offset(input_view, flat);\n"
+         "  ulong alpha_at = m3_view_logical_offset(alpha_view, channel);\n"
+         "  ulong output_at = m3_view_contiguous_offset(output_view, flat);\n"
+         "  float x = m3_load_float(input + input_at, input_view.dtype);\n"
+         "  float a = m3_load_float(alpha + alpha_at, alpha_view.dtype);\n"
+         "  volatile float denominator =\n"
+         "    a + as_type<float>(0x3089705fu);\n"
+         "  volatile float inverse = 1.0f / denominator;\n"
+         "  volatile float angle = a * x;\n"
+         "  volatile float sine = metal::precise::sin(angle);\n"
+         "  volatile float square = sine * sine;\n"
+         "  volatile float scaled = inverse * square;\n"
+         "  volatile float result = x + scaled;\n"
+         "  m3_store_float(output + output_at, output_view.dtype, result);\n"
+         "}\n"
+         "kernel void m3_tanh(\n"
+         "    device const uchar* input [[buffer(0)]],\n"
+         "    device uchar* output [[buffer(1)]],\n"
+         "    constant M3ViewParameters& input_view [[buffer(2)]],\n"
+         "    constant M3ViewParameters& output_view [[buffer(3)]],\n"
+         "    uint gid [[thread_position_in_grid]]) {\n"
+         "  ulong flat = ulong(gid);\n"
+         "  if (flat >= input_view.element_count) return;\n"
+         "  ulong input_at = m3_view_logical_offset(input_view, flat);\n"
+         "  ulong output_at = m3_view_contiguous_offset(output_view, flat);\n"
+         "  float x = m3_load_float(input + input_at, input_view.dtype);\n"
+         "  float result = metal::precise::tanh(x);\n"
+         "  m3_store_float(output + output_at, output_view.dtype, result);\n"
+         "}\n"
+         "#pragma clang fp contract(on)\n"];
 }
 
 m3_status m3_metal_prepare_basic(m3_metal_context *context,
@@ -166,6 +213,14 @@ m3_status m3_metal_prepare_basic(m3_metal_context *context,
     if (status == M3_STATUS_OK) {
         status = m3_metal_register_pipeline(
             context, m3_metal_softmax_kernel, error);
+    }
+    if (status == M3_STATUS_OK) {
+        status = m3_metal_register_pipeline(
+            context, m3_metal_snake1d_kernel, error);
+    }
+    if (status == M3_STATUS_OK) {
+        status = m3_metal_register_pipeline(
+            context, m3_metal_tanh_kernel, error);
     }
     return status;
 }
@@ -199,6 +254,12 @@ static m3_storage *m3_metal_basic_output_storage(
     }
     if (command->kind == M3_OP_SOFTMAX) {
         return command->descriptor.softmax.output->storage;
+    }
+    if (command->kind == M3_OP_SNAKE1D) {
+        return command->descriptor.snake1d.output->storage;
+    }
+    if (command->kind == M3_OP_TANH) {
+        return command->descriptor.tanh.output->storage;
     }
     return NULL;
 }
@@ -371,6 +432,84 @@ static m3_status m3_metal_encode_softmax(
         encoder, pipeline, row_count, error);
 }
 
+static m3_status m3_metal_encode_snake1d(
+    const m3_metal_context *context,
+    id<MTLComputeCommandEncoder> encoder, const m3_op_snake1d *op,
+    m3_error *error)
+{
+    id<MTLComputePipelineState> pipeline = m3_metal_find_pipeline(
+        context, m3_metal_snake1d_kernel);
+    id<MTLBuffer> input = (__bridge id<MTLBuffer>)
+        m3_storage_handle_internal(op->input->storage);
+    id<MTLBuffer> alpha = (__bridge id<MTLBuffer>)
+        m3_storage_handle_internal(op->alpha->storage);
+    id<MTLBuffer> output = (__bridge id<MTLBuffer>)
+        m3_storage_handle_internal(op->output->storage);
+    m3_metal_view_parameters input_parameters;
+    m3_metal_view_parameters alpha_parameters;
+    m3_metal_view_parameters output_parameters;
+
+    if (op->output->metadata.element_count == 0U) {
+        return M3_STATUS_OK;
+    }
+    if (input == nil || alpha == nil || output == nil) {
+        return m3_error_set(error, M3_STATUS_INTERNAL,
+                            "Metal command resources are unavailable");
+    }
+    m3_metal_view_parameters_init(&input_parameters, op->input);
+    m3_metal_view_parameters_init(&alpha_parameters, op->alpha);
+    m3_metal_view_parameters_init(&output_parameters, op->output);
+    [encoder setBuffer:input offset:0U atIndex:0U];
+    [encoder setBuffer:alpha offset:0U atIndex:1U];
+    [encoder setBuffer:output offset:0U atIndex:2U];
+    [encoder setBytes:&input_parameters
+               length:sizeof(input_parameters)
+              atIndex:3U];
+    [encoder setBytes:&alpha_parameters
+               length:sizeof(alpha_parameters)
+              atIndex:4U];
+    [encoder setBytes:&output_parameters
+               length:sizeof(output_parameters)
+              atIndex:5U];
+    return m3_metal_dispatch_1d(
+        encoder, pipeline, op->output->metadata.element_count, error);
+}
+
+static m3_status m3_metal_encode_tanh(
+    const m3_metal_context *context,
+    id<MTLComputeCommandEncoder> encoder, const m3_op_unary *op,
+    m3_error *error)
+{
+    id<MTLComputePipelineState> pipeline = m3_metal_find_pipeline(
+        context, m3_metal_tanh_kernel);
+    id<MTLBuffer> input = (__bridge id<MTLBuffer>)
+        m3_storage_handle_internal(op->input->storage);
+    id<MTLBuffer> output = (__bridge id<MTLBuffer>)
+        m3_storage_handle_internal(op->output->storage);
+    m3_metal_view_parameters input_parameters;
+    m3_metal_view_parameters output_parameters;
+
+    if (op->output->metadata.element_count == 0U) {
+        return M3_STATUS_OK;
+    }
+    if (input == nil || output == nil) {
+        return m3_error_set(error, M3_STATUS_INTERNAL,
+                            "Metal command resources are unavailable");
+    }
+    m3_metal_view_parameters_init(&input_parameters, op->input);
+    m3_metal_view_parameters_init(&output_parameters, op->output);
+    [encoder setBuffer:input offset:0U atIndex:0U];
+    [encoder setBuffer:output offset:0U atIndex:1U];
+    [encoder setBytes:&input_parameters
+               length:sizeof(input_parameters)
+              atIndex:2U];
+    [encoder setBytes:&output_parameters
+               length:sizeof(output_parameters)
+              atIndex:3U];
+    return m3_metal_dispatch_1d(
+        encoder, pipeline, op->output->metadata.element_count, error);
+}
+
 m3_status m3_metal_encode_basic(const m3_metal_context *context,
                                  id<MTLComputeCommandEncoder> encoder,
                                  const m3_command *command, bool *handled,
@@ -398,6 +537,16 @@ m3_status m3_metal_encode_basic(const m3_metal_context *context,
         *handled = true;
         return m3_metal_encode_softmax(
             context, encoder, &command->descriptor.softmax, error);
+    }
+    if (command->kind == M3_OP_SNAKE1D) {
+        *handled = true;
+        return m3_metal_encode_snake1d(
+            context, encoder, &command->descriptor.snake1d, error);
+    }
+    if (command->kind == M3_OP_TANH) {
+        *handled = true;
+        return m3_metal_encode_tanh(
+            context, encoder, &command->descriptor.tanh, error);
     }
     {
         *handled = false;

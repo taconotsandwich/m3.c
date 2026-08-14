@@ -179,6 +179,56 @@ static m3_status m3_host_softmax(const m3_op_unary *op)
     return M3_STATUS_OK;
 }
 
+#pragma STDC FP_CONTRACT OFF
+static float m3_host_snake1d_value(float input, float alpha)
+{
+    volatile float denominator = alpha + 0x1.12e0bep-30F;
+    volatile float inverse = 1.0F / denominator;
+    volatile float angle = alpha * input;
+    volatile float sine = sinf(angle);
+    volatile float square = sine * sine;
+    volatile float scaled = inverse * square;
+    volatile float result = input + scaled;
+
+    return result;
+}
+#pragma STDC FP_CONTRACT DEFAULT
+
+static m3_status m3_host_snake1d(const m3_op_snake1d *op)
+{
+    size_t length = (size_t)op->input->metadata.shape[2];
+    size_t channels = (size_t)op->input->metadata.shape[1];
+    size_t index;
+
+    for (index = 0U; index < op->input->metadata.element_count; ++index) {
+        size_t channel = (index / length) % channels;
+        float input = m3_op_load_float(
+            op->input, m3_op_element_offset(op->input, index));
+        float alpha = m3_op_load_float(
+            op->alpha, m3_op_element_offset(op->alpha, channel));
+        float output = m3_host_snake1d_value(input, alpha);
+
+        m3_op_store_float(op->output,
+                          m3_op_element_offset(op->output, index), output);
+    }
+    return M3_STATUS_OK;
+}
+
+static m3_status m3_host_tanh(const m3_op_unary *op)
+{
+    size_t index;
+
+    for (index = 0U; index < op->input->metadata.element_count; ++index) {
+        float input = m3_op_load_float(
+            op->input, m3_op_element_offset(op->input, index));
+
+        m3_op_store_float(op->output,
+                          m3_op_element_offset(op->output, index),
+                          tanhf(input));
+    }
+    return M3_STATUS_OK;
+}
+
 m3_status m3_host_execute_basic(const m3_command *command,
                                 m3_scratch_arena *scratch,
                                 bool *handled, m3_error *error)
@@ -201,6 +251,10 @@ m3_status m3_host_execute_basic(const m3_command *command,
         return m3_host_gated_silu(&command->descriptor.gated_silu);
     case M3_OP_SOFTMAX:
         return m3_host_softmax(&command->descriptor.softmax);
+    case M3_OP_SNAKE1D:
+        return m3_host_snake1d(&command->descriptor.snake1d);
+    case M3_OP_TANH:
+        return m3_host_tanh(&command->descriptor.tanh);
     default:
         *handled = false;
         return M3_STATUS_OK;

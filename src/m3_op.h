@@ -29,7 +29,9 @@ typedef enum {
     M3_OP_CATEGORICAL,
     M3_OP_CONV1D,
     M3_OP_CONV_TRANSPOSE1D,
-    M3_OP_NEAREST_RESIZE1D
+    M3_OP_NEAREST_RESIZE1D,
+    M3_OP_SNAKE1D,
+    M3_OP_TANH
 } m3_op_kind;
 
 typedef enum {
@@ -142,6 +144,12 @@ typedef struct {
 } m3_op_conv_transpose1d;
 
 typedef struct {
+    const m3_tensor_view *input;
+    const m3_tensor_view *alpha;
+    m3_tensor_view *output;
+} m3_op_snake1d;
+
+typedef struct {
     m3_op_kind kind;
     union {
         m3_op_unary copy;
@@ -162,6 +170,8 @@ typedef struct {
         m3_op_conv1d conv1d;
         m3_op_conv_transpose1d conv_transpose1d;
         m3_op_unary nearest_resize1d;
+        m3_op_snake1d snake1d;
+        m3_op_unary tanh;
     } descriptor;
 } m3_command;
 
@@ -171,7 +181,10 @@ typedef struct {
  * Attention computes softmax in F32, then rounds its probabilities to the
  * query dtype before multiplying by values. RMSNorm rounds normalized values
  * to the input dtype before scaling; gated SiLU rounds its activation to the
- * gate dtype before multiplying by the up projection. */
+ * gate dtype before multiplying by the up projection. Snake1d uses the exact
+ * F32 epsilon bits 0x3089705f and rounds each documented arithmetic statement
+ * to F32. Tanh maps signed zero and infinity according to tanhf; both waveform
+ * activations propagate NaN results. */
 
 m3_status m3_command_validate(const m3_backend *backend,
                               const m3_command *command,

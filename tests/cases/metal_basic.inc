@@ -8,3 +8,5 @@ M3_TEST_CASE(m3_test_metal_basic_arithmetic,
              "Metal ADD and MUL command execution")
 M3_TEST_CASE(m3_test_metal_basic_softmax,
              "Metal SOFTMAX command execution")
+M3_TEST_CASE(m3_test_metal_vocoder_activations,
+             "Metal vocoder activation execution")
