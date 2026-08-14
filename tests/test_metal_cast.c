@@ -296,23 +296,31 @@ static bool m3_test_metal_invalid_i32_atomic(
 {
     const uint64_t shape[] = {4U};
     const uint64_t matrix_shape[] = {1U, 1U};
+    const uint64_t one_shape[] = {1U};
     const float invalid_values[] = {1.0F, NAN, 2.0F, INFINITY};
     const float valid_values[] = {9.0F, 8.0F, 7.0F, 6.0F};
     const int32_t sentinels[] = {77, 78, 79, 80};
+    const int32_t valid_id[] = {0};
     m3_tensor_view input;
     m3_tensor_view middle;
     m3_tensor_view output;
-    m3_tensor_view dense_input;
+    m3_tensor_view id_source;
+    m3_tensor_view dense_ids;
+    m3_tensor_view dense_table;
     m3_tensor_view dense_output;
     m3_command command;
-    m3_command commands[2];
+    m3_command copy;
+    m3_command embedding;
+    m3_command commands[3];
     m3_error error;
     m3_status status;
 
     m3_tensor_view_init(&input);
     m3_tensor_view_init(&middle);
     m3_tensor_view_init(&output);
-    m3_tensor_view_init(&dense_input);
+    m3_tensor_view_init(&id_source);
+    m3_tensor_view_init(&dense_ids);
+    m3_tensor_view_init(&dense_table);
     m3_tensor_view_init(&dense_output);
     M3_TEST_EXPECT(test,
                    m3_op_test_tensor(fixture, &input, M3_DTYPE_F32, 1U,
@@ -355,32 +363,48 @@ static bool m3_test_metal_invalid_i32_atomic(
                               sizeof(sentinels)) == 0,
                    "produced float-to-I32 input is rejected before commit");
     M3_TEST_EXPECT(test,
-                   m3_tensor_view_contiguous(
-                       &dense_input, input.storage, M3_DTYPE_F32, 2U,
-                       matrix_shape, 0U, &error) == M3_STATUS_OK &&
+                   m3_op_test_tensor(fixture, &id_source, M3_DTYPE_I32, 1U,
+                                     one_shape, valid_id) &&
+                       m3_tensor_view_contiguous(
+                           &dense_ids, output.storage, M3_DTYPE_I32, 1U,
+                           one_shape, 0U, &error) == M3_STATUS_OK &&
+                       m3_tensor_view_contiguous(
+                           &dense_table, input.storage, M3_DTYPE_F32, 2U,
+                           matrix_shape, 0U, &error) == M3_STATUS_OK &&
                        m3_tensor_view_contiguous(
                            &dense_output, middle.storage, M3_DTYPE_F32, 2U,
                            matrix_shape, 0U, &error) == M3_STATUS_OK,
-                   "create ordering-test dense views");
-    commands[0].kind = M3_OP_MATMUL;
-    commands[0].descriptor.matmul.left = &dense_input;
-    commands[0].descriptor.matmul.right = &dense_input;
-    commands[0].descriptor.matmul.output = &dense_output;
-    commands[1] = command;
-    status = m3_backend_execute(fixture->backend, commands, 2U, NULL, &error);
+                   "create ordering-test embedding views");
+    copy.kind = M3_OP_COPY;
+    copy.descriptor.copy.input = &id_source;
+    copy.descriptor.copy.output = &dense_ids;
+    embedding.kind = M3_OP_EMBEDDING;
+    embedding.descriptor.embedding.ids = &dense_ids;
+    embedding.descriptor.embedding.table = &dense_table;
+    embedding.descriptor.embedding.output = &dense_output;
+    commands[0] = copy;
+    commands[1] = embedding;
+    commands[2] = command;
+    status = m3_backend_execute(fixture->backend, commands, 3U, NULL, &error);
     M3_TEST_EXPECT(test,
                    status == M3_STATUS_UNSUPPORTED &&
                        memcmp(m3_op_test_f32(&middle), valid_values,
                               sizeof(valid_values)) == 0 &&
                        memcmp(m3_op_test_i32(&output), sentinels,
                               sizeof(sentinels)) == 0,
-                   "earlier unsupported command wins without mutation");
+                   "dependent embedding wins before an invalid cast");
+    status = m3_backend_execute(fixture->backend, commands, 3U, NULL, NULL);
+    M3_TEST_EXPECT(test,
+                   status == M3_STATUS_UNSUPPORTED &&
+                       memcmp(m3_op_test_f32(&middle), valid_values,
+                              sizeof(valid_values)) == 0 &&
+                       memcmp(m3_op_test_i32(&output), sentinels,
+                              sizeof(sentinels)) == 0,
+                   "dependent embedding order accepts a null error sink");
     commands[0] = command;
-    commands[1].kind = M3_OP_MATMUL;
-    commands[1].descriptor.matmul.left = &dense_input;
-    commands[1].descriptor.matmul.right = &dense_input;
-    commands[1].descriptor.matmul.output = &dense_output;
-    status = m3_backend_execute(fixture->backend, commands, 2U, NULL, &error);
+    commands[1] = copy;
+    commands[2] = embedding;
+    status = m3_backend_execute(fixture->backend, commands, 3U, NULL, &error);
     M3_TEST_EXPECT(test,
                    status == M3_STATUS_OUT_OF_RANGE &&
                        memcmp(m3_op_test_f32(&middle), valid_values,
@@ -388,6 +412,14 @@ static bool m3_test_metal_invalid_i32_atomic(
                        memcmp(m3_op_test_i32(&output), sentinels,
                               sizeof(sentinels)) == 0,
                    "earlier invalid cast wins without mutation");
+    status = m3_backend_execute(fixture->backend, commands, 3U, NULL, NULL);
+    M3_TEST_EXPECT(test,
+                   status == M3_STATUS_OUT_OF_RANGE &&
+                       memcmp(m3_op_test_f32(&middle), valid_values,
+                              sizeof(valid_values)) == 0 &&
+                       memcmp(m3_op_test_i32(&output), sentinels,
+                              sizeof(sentinels)) == 0,
+                   "invalid cast order accepts a null error sink");
     return true;
 }
 

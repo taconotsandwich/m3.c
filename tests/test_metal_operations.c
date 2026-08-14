@@ -163,60 +163,60 @@ static bool m3_test_metal_multi_command(m3_test_context *test,
 static bool m3_test_metal_unsupported_atomic(
     m3_test_context *test, m3_op_test_fixture *fixture)
 {
-    const uint64_t vector_shape[] = {1U};
-    const uint64_t matrix_shape[] = {1U, 1U};
-    const float source_value[] = {7.0F};
-    const float right_value[] = {3.0F};
-    const float copy_sentinel[] = {-41.0F};
-    const float dense_sentinel[] = {-42.0F};
-    m3_tensor_view source;
-    m3_tensor_view copy_output;
-    m3_tensor_view left;
-    m3_tensor_view right;
-    m3_tensor_view dense_output;
+    const uint64_t ids_shape[] = {1U};
+    const uint64_t table_shape[] = {1U, 1U};
+    const uint64_t output_shape[] = {1U, 1U};
+    const int32_t source_id[] = {0};
+    const int32_t copied_id_sentinel[] = {19};
+    const float table_value[] = {3.0F};
+    const float output_sentinel[] = {-42.0F};
+    m3_tensor_view source_ids;
+    m3_tensor_view copied_ids;
+    m3_tensor_view table;
+    m3_tensor_view output;
     m3_command commands[2];
     m3_error error;
     m3_status status;
 
-    m3_tensor_view_init(&source);
-    m3_tensor_view_init(&copy_output);
-    m3_tensor_view_init(&left);
-    m3_tensor_view_init(&right);
-    m3_tensor_view_init(&dense_output);
+    m3_tensor_view_init(&source_ids);
+    m3_tensor_view_init(&copied_ids);
+    m3_tensor_view_init(&table);
+    m3_tensor_view_init(&output);
     M3_TEST_EXPECT(test,
-                   m3_op_test_tensor(fixture, &source, M3_DTYPE_F32, 1U,
-                                     vector_shape, source_value) &&
-                       m3_op_test_tensor(fixture, &copy_output, M3_DTYPE_F32,
-                                         1U, vector_shape, copy_sentinel) &&
-                       m3_op_test_tensor(fixture, &left, M3_DTYPE_F32, 2U,
-                                         matrix_shape, source_value) &&
-                       m3_op_test_tensor(fixture, &right, M3_DTYPE_F32, 2U,
-                                         matrix_shape, right_value) &&
-                       m3_op_test_tensor(fixture, &dense_output,
-                                         M3_DTYPE_F32, 2U, matrix_shape,
-                                         dense_sentinel),
+                   m3_op_test_tensor(fixture, &source_ids, M3_DTYPE_I32, 1U,
+                                     ids_shape, source_id) &&
+                       m3_op_test_tensor(fixture, &copied_ids,
+                                         M3_DTYPE_I32, 1U, ids_shape,
+                                         copied_id_sentinel) &&
+                       m3_op_test_tensor(fixture, &table, M3_DTYPE_F32, 2U,
+                                         table_shape, table_value) &&
+                       m3_op_test_tensor(fixture, &output, M3_DTYPE_F32, 2U,
+                                         output_shape, output_sentinel),
                    "create unsupported-list Metal tensors");
-    if (dense_output.storage == NULL) {
+    if (output.storage == NULL) {
         return false;
     }
     commands[0].kind = M3_OP_COPY;
-    commands[0].descriptor.copy.input = &source;
-    commands[0].descriptor.copy.output = &copy_output;
-    commands[1].kind = M3_OP_MATMUL;
-    commands[1].descriptor.matmul.left = &left;
-    commands[1].descriptor.matmul.right = &right;
-    commands[1].descriptor.matmul.output = &dense_output;
+    commands[0].descriptor.copy.input = &source_ids;
+    commands[0].descriptor.copy.output = &copied_ids;
+    commands[1].kind = M3_OP_EMBEDDING;
+    commands[1].descriptor.embedding.ids = &copied_ids;
+    commands[1].descriptor.embedding.table = &table;
+    commands[1].descriptor.embedding.output = &output;
     status = m3_backend_execute(fixture->backend, commands, 2U, NULL, &error);
     M3_TEST_EXPECT(test,
                    status == M3_STATUS_UNSUPPORTED &&
-                       m3_op_test_f32(&copy_output)[0] == copy_sentinel[0] &&
-                       m3_op_test_f32(&dense_output)[0] == dense_sentinel[0],
-                   "unsupported dense command prevents the encoded COPY commit");
+                       m3_op_test_i32(&copied_ids)[0] ==
+                           copied_id_sentinel[0] &&
+                       m3_op_test_f32(&output)[0] == output_sentinel[0],
+                   "dependent embedding prevents the encoded COPY commit");
     status = m3_backend_execute(fixture->backend, commands, 2U, NULL, NULL);
     M3_TEST_EXPECT(test,
                    status == M3_STATUS_UNSUPPORTED &&
-                       m3_op_test_f32(&copy_output)[0] == copy_sentinel[0],
-                   "unsupported Metal list accepts a null error sink");
+                       m3_op_test_i32(&copied_ids)[0] ==
+                           copied_id_sentinel[0] &&
+                       m3_op_test_f32(&output)[0] == output_sentinel[0],
+                   "dependent Metal list accepts a null error sink");
     return true;
 }
 
