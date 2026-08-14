@@ -3,48 +3,65 @@
 CC = clang
 AR = ar
 
-CPPFLAGS = -Iinclude
-CFLAGS = -std=c11 -O3 -Wall -Wextra -Wpedantic -Wshadow -Wconversion
+CPPFLAGS = -D_POSIX_C_SOURCE=200809L -Iinclude -Isrc -Itests
+COMMON_CFLAGS = -std=c11 -Wall -Wextra -Wpedantic -Wshadow -Wconversion
+CFLAGS = $(COMMON_CFLAGS) -O3
+SANITIZER_FLAGS = -fsanitize=address,undefined -fno-omit-frame-pointer
+SANITIZER_CFLAGS = $(COMMON_CFLAGS) -O1 -g $(SANITIZER_FLAGS)
+LDLIBS = -lm
 
 BUILD_DIR = build
+SANITIZER_BUILD_DIR = build-sanitize
 LIBRARY = $(BUILD_DIR)/libm3.a
 TEST_BINARY = $(BUILD_DIR)/test_m3
-LIBRARY_OBJECTS = $(BUILD_DIR)/m3.o \
-	$(BUILD_DIR)/m3_error.o \
-	$(BUILD_DIR)/m3_model.o \
-	$(BUILD_DIR)/m3_tensor.o
-TEST_OBJECTS = $(BUILD_DIR)/test_m3.o
+LIBRARY_SOURCES = src/m3.c \
+	src/m3_error.c \
+	src/m3_model.c \
+	src/m3_tensor.c
+TEST_SOURCES = tests/m3_test.c \
+	tests/test_api.c \
+	tests/test_fixture.c \
+	tests/test_main.c \
+	tests/test_model.c \
+	tests/test_tensor.c
+LIBRARY_OBJECTS = $(patsubst src/%.c,$(BUILD_DIR)/src/%.o,$(LIBRARY_SOURCES))
+TEST_OBJECTS = $(patsubst tests/%.c,$(BUILD_DIR)/tests/%.o,$(TEST_SOURCES))
+DEPENDENCY_FILES = $(LIBRARY_OBJECTS:.o=.d) $(TEST_OBJECTS:.o=.d)
 
-.PHONY: all clean test
+.PHONY: all clean test test-sanitize
 
 all: $(LIBRARY)
 
 test: $(TEST_BINARY)
 	$(TEST_BINARY)
 
+test-sanitize:
+	$(MAKE) BUILD_DIR=$(SANITIZER_BUILD_DIR) \
+		CFLAGS="$(SANITIZER_CFLAGS)" \
+		LDFLAGS="$(SANITIZER_FLAGS)" test
+
 $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)
 
-$(BUILD_DIR)/m3.o: src/m3.c include/m3.h | $(BUILD_DIR)
-	$(CC) $(CPPFLAGS) $(CFLAGS) -c src/m3.c -o $@
+$(BUILD_DIR)/src: | $(BUILD_DIR)
+	mkdir -p $(BUILD_DIR)/src
 
-$(BUILD_DIR)/m3_error.o: src/m3_error.c src/m3_error.h include/m3.h | $(BUILD_DIR)
-	$(CC) $(CPPFLAGS) $(CFLAGS) -Isrc -c src/m3_error.c -o $@
+$(BUILD_DIR)/tests: | $(BUILD_DIR)
+	mkdir -p $(BUILD_DIR)/tests
 
-$(BUILD_DIR)/m3_model.o: src/m3_model.c src/m3_model.h src/m3_error.h include/m3.h | $(BUILD_DIR)
-	$(CC) $(CPPFLAGS) $(CFLAGS) -Isrc -c src/m3_model.c -o $@
+$(BUILD_DIR)/src/%.o: src/%.c | $(BUILD_DIR)/src
+	$(CC) $(CPPFLAGS) $(CFLAGS) -MMD -MP -c $< -o $@
 
-$(BUILD_DIR)/m3_tensor.o: src/m3_tensor.c src/m3_tensor.h src/m3_error.h include/m3.h | $(BUILD_DIR)
-	$(CC) $(CPPFLAGS) $(CFLAGS) -Isrc -c src/m3_tensor.c -o $@
-
-$(BUILD_DIR)/test_m3.o: tests/test_m3.c include/m3.h src/m3_error.h src/m3_model.h src/m3_tensor.h | $(BUILD_DIR)
-	$(CC) $(CPPFLAGS) $(CFLAGS) -Isrc -c tests/test_m3.c -o $@
+$(BUILD_DIR)/tests/%.o: tests/%.c | $(BUILD_DIR)/tests
+	$(CC) $(CPPFLAGS) $(CFLAGS) -MMD -MP -c $< -o $@
 
 $(LIBRARY): $(LIBRARY_OBJECTS)
 	$(AR) rcs $@ $(LIBRARY_OBJECTS)
 
 $(TEST_BINARY): $(TEST_OBJECTS) $(LIBRARY)
-	$(CC) $(CFLAGS) $(TEST_OBJECTS) $(LIBRARY) -o $@
+	$(CC) $(CFLAGS) $(LDFLAGS) $(TEST_OBJECTS) $(LIBRARY) $(LDLIBS) -o $@
 
 clean:
-	rm -rf $(BUILD_DIR)
+	rm -rf build build-sanitize
+
+-include $(DEPENDENCY_FILES)
