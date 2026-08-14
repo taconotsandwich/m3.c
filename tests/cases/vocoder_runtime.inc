@@ -38,3 +38,19 @@ M3_TEST_CASE(test_metal_vocoder_decode_chunk,
              "vocoder decoder real Metal integration")
 M3_TEST_CASE(test_vocoder_decode_rejects_partial_topology,
              "vocoder decoder rejects partial topology")
+M3_TEST_CASE(test_waveform_assembly_boundaries,
+             "waveform official crop and concatenate boundaries")
+M3_TEST_CASE(test_waveform_assembly_clamp_bits,
+             "waveform bit-exact post-tanh clamp")
+M3_TEST_CASE(test_waveform_assembly_alias_lifetime,
+             "waveform aliased input ownership lifetime")
+M3_TEST_CASE(test_waveform_assembly_io_faults,
+             "waveform bounded storage I/O faults")
+M3_TEST_CASE(test_waveform_assembly_cancel_retry,
+             "waveform channel cancellation and retry")
+M3_TEST_CASE(test_waveform_assembly_validation_atomicity,
+             "waveform validation side-effect ordering")
+M3_TEST_CASE(test_waveform_assembly_maximum_preflight,
+             "waveform maximum metadata preflight")
+M3_TEST_CASE(test_metal_waveform_assembly,
+             "waveform real Metal storage assembly")
