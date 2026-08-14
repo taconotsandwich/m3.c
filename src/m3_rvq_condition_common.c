@@ -162,6 +162,22 @@ void m3_rvq_frame_dispose(m3_rvq_frame *frame)
     m3_rvq_frame_init(frame);
 }
 
+void m3_rvq_feedback_init(m3_rvq_feedback *feedback)
+{
+    if (feedback != NULL) {
+        (void)memset(feedback, 0, sizeof(*feedback));
+    }
+}
+
+void m3_rvq_feedback_dispose(m3_rvq_feedback *feedback)
+{
+    if (feedback == NULL) {
+        return;
+    }
+    m3_storage_free(feedback->storage);
+    m3_rvq_feedback_init(feedback);
+}
+
 void m3_condition_output_init(m3_condition_output *output)
 {
     if (output != NULL) {

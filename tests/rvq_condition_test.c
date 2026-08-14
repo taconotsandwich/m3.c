@@ -156,19 +156,46 @@ static void m3_rvq_test_free_weights(m3_rvq_test_fixture *fixture)
 bool m3_rvq_test_fixture_init(m3_rvq_test_fixture *fixture,
                               m3_dtype dtype)
 {
+    m3_backend *backend = NULL;
+    m3_error error;
+
+    if (m3_backend_create_host(&backend, &error) != M3_STATUS_OK) {
+        return false;
+    }
+    return m3_rvq_test_fixture_init_backend(
+        fixture, dtype, 2U, backend, true);
+}
+
+bool m3_rvq_test_fixture_init_backend(m3_rvq_test_fixture *fixture,
+                                      m3_dtype dtype,
+                                      uint32_t hidden_size,
+                                      m3_backend *backend,
+                                      bool owns_backend)
+{
     const uint64_t audio[] = {
-        (M3_RVQ_CODEBOOK_COUNT - 1U) * M3_RVQ_CODEBOOK_SIZE, 2U
+        (M3_RVQ_CODEBOOK_COUNT - 1U) * M3_RVQ_CODEBOOK_SIZE,
+        hidden_size
     };
-    const uint64_t matrix[] = {2U, 2U};
-    const uint64_t positions[] = {16U, 2U};
-    const uint64_t hidden[] = {2U};
-    const uint64_t head[] = {M3_RVQ_CODEBOOK_SIZE, 2U};
-    const uint64_t last[] = {2U, 2U};
+    const uint64_t matrix[] = {hidden_size, hidden_size};
+    const uint64_t positions[] = {16U, hidden_size};
+    const uint64_t hidden[] = {hidden_size};
+    const uint64_t head[] = {M3_RVQ_CODEBOOK_SIZE, hidden_size};
+    const uint64_t last[] = {2U, hidden_size};
     size_t index;
 
+    if (fixture == NULL || backend == NULL || hidden_size < 2U ||
+        hidden_size % 2U != 0U) {
+        if (owns_backend) {
+            m3_backend_free(backend);
+        }
+        return false;
+    }
     (void)memset(fixture, 0, sizeof(*fixture));
-    fixture->config = (m3_rvq_config){2U, 1U, 1U, 2U, 16U, dtype};
-    if (!m3_op_test_fixture_init(&fixture->fixture) ||
+    fixture->config = (m3_rvq_config){
+        hidden_size, 1U, hidden_size / 2U, hidden_size, 16U, dtype
+    };
+    if (!m3_op_test_fixture_init_backend(
+            &fixture->fixture, backend, owns_backend) ||
         !m3_rvq_test_weight(
             fixture, audio, 2U,
             &fixture->weights.audio_embeddings, 0.0F) ||
@@ -199,26 +226,29 @@ bool m3_rvq_test_fixture_init(m3_rvq_test_fixture *fixture,
             return false;
         }
     }
-    m3_rc_set((m3_tensor_view *)fixture->weights.projection, 0U, 1.0F);
-    m3_rc_set((m3_tensor_view *)fixture->weights.projection, 3U, 1.0F);
+    for (index = 0U; index < hidden_size; ++index) {
+        m3_rc_set((m3_tensor_view *)fixture->weights.projection,
+                  index * hidden_size + index, 1.0F);
+    }
     for (index = 0U; index < 16U; ++index) {
         m3_rc_set((m3_tensor_view *)fixture->weights.position_embeddings,
-                  index * 2U, (float)index * 0.25F);
+                  index * hidden_size, (float)index * 0.25F);
         m3_rc_set((m3_tensor_view *)fixture->weights.position_embeddings,
-                  index * 2U + 1U, (float)index * 0.125F);
+                  index * hidden_size + 1U,
+                  (float)index * 0.125F);
     }
     for (index = 0U; index < 7U * M3_RVQ_CODEBOOK_SIZE; ++index) {
         float book = (float)(index / M3_RVQ_CODEBOOK_SIZE + 1U);
 
         m3_rc_set((m3_tensor_view *)fixture->weights.audio_embeddings,
-                  index * 2U, book);
+                  index * hidden_size, book);
         m3_rc_set((m3_tensor_view *)fixture->weights.audio_embeddings,
-                  index * 2U + 1U, -0.5F * book);
+                  index * hidden_size + 1U, -0.5F * book);
     }
     m3_rc_set(&fixture->last_hidden, 0U, 3.0F);
     m3_rc_set(&fixture->last_hidden, 1U, 4.0F);
-    m3_rc_set(&fixture->last_hidden, 2U, -2.0F);
-    m3_rc_set(&fixture->last_hidden, 3U, 1.0F);
+    m3_rc_set(&fixture->last_hidden, hidden_size, -2.0F);
+    m3_rc_set(&fixture->last_hidden, hidden_size + 1U, 1.0F);
     m3_rc_set(&fixture->semantic_embedding, 0U, 0.5F);
     m3_rc_set(&fixture->semantic_embedding, 1U, 1.0F);
     return true;

@@ -75,11 +75,10 @@ typedef struct {
 
 typedef enum {
     M3_QWEN_FORWARD_PREFILL = 0,
-    M3_QWEN_FORWARD_STEP
+    M3_QWEN_FORWARD_ADVANCE
 } m3_qwen_forward_kind;
 
 typedef struct {
-    const m3_tensor_view *token_embedding;
     const m3_tensor_view *hidden;
     const m3_tensor_view *eos_logits;
     const m3_tensor_view *semantic_logits;
@@ -123,7 +122,7 @@ void m3_qwen_forward_state_init(m3_qwen_forward_state *state);
 void m3_qwen_forward_state_dispose(m3_qwen_forward_state *state);
 m3_status m3_qwen_forward_execute(m3_qwen_forward_state *state,
                                   m3_qwen_forward_kind kind,
-                                  const m3_tensor_view *ids,
+                                  const m3_tensor_view *input,
                                   m3_progress_callback progress,
                                   void *progress_context,
                                   m3_qwen_forward_result *result,

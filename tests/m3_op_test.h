@@ -16,9 +16,13 @@ typedef struct {
     m3_backend *backend;
     m3_storage *storages[M3_OP_TEST_STORAGE_CAPACITY];
     size_t storage_count;
+    bool owns_backend;
 } m3_op_test_fixture;
 
 bool m3_op_test_fixture_init(m3_op_test_fixture *fixture);
+bool m3_op_test_fixture_init_backend(m3_op_test_fixture *fixture,
+                                     m3_backend *backend,
+                                     bool owns_backend);
 void m3_op_test_fixture_dispose(m3_op_test_fixture *fixture);
 bool m3_op_test_tensor(m3_op_test_fixture *fixture, m3_tensor_view *view,
                        m3_dtype dtype, uint8_t rank,

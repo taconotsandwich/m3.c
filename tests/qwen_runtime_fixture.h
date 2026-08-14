@@ -22,10 +22,16 @@ typedef struct {
 
 bool m3_qwen_test_fixture_init(m3_qwen_test_fixture *fixture,
                                uint64_t capacity);
+bool m3_qwen_test_fixture_init_backend(m3_qwen_test_fixture *fixture,
+                                       uint64_t capacity,
+                                       m3_backend *backend,
+                                       bool owns_backend);
 void m3_qwen_test_fixture_dispose(m3_qwen_test_fixture *fixture);
 bool m3_qwen_test_ids(m3_qwen_test_fixture *fixture,
                       m3_tensor_view *view, uint64_t sequence,
                       const int32_t *values);
+bool m3_qwen_test_feedback(m3_qwen_test_fixture *fixture,
+                           m3_tensor_view *view, const float *values);
 uint16_t m3_qwen_test_bf16_at(const m3_tensor_view *view, size_t index);
 float m3_qwen_test_f32_at(const m3_tensor_view *view, size_t index);
 

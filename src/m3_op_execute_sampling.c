@@ -2,7 +2,6 @@
 
 #include "m3_op_internal.h"
 
-#include <math.h>
 #include <stddef.h>
 
 bool m3_top_precedes(float left_value, int32_t left_index,
@@ -53,15 +52,6 @@ static m3_status m3_host_top_k(const m3_op_top_k *op,
     size_t row;
     m3_status status;
 
-    for (index = 0U; index < op->logits->metadata.element_count; ++index) {
-        float value = m3_op_load_float(
-            op->logits, m3_op_element_offset(op->logits, index));
-
-        if (isnan(value)) {
-            return m3_error_set(error, M3_STATUS_OUT_OF_RANGE,
-                                "top-k logits contain NaN");
-        }
-    }
     status = m3_scratch_arena_allocate(
         scratch, k * sizeof(*pairs), _Alignof(m3_top_pair),
         (void **)&pairs, error);
@@ -98,56 +88,13 @@ static m3_status m3_host_top_k(const m3_op_top_k *op,
     return M3_STATUS_OK;
 }
 
-static m3_status m3_host_categorical_preflight(
-    const m3_op_categorical *op, size_t rows, size_t vocabulary,
-    m3_error *error)
-{
-    size_t row;
-
-    for (row = 0U; row < rows; ++row) {
-        float uniform = m3_op_load_float(
-            op->uniforms, m3_op_element_offset(op->uniforms, row));
-        float sum = 0.0F;
-        size_t index;
-
-        if (!isfinite(uniform) || uniform < 0.0F || uniform >= 1.0F) {
-            return m3_error_set(error, M3_STATUS_OUT_OF_RANGE,
-                                "categorical uniform is outside [0,1)");
-        }
-        for (index = 0U; index < vocabulary; ++index) {
-            float probability = m3_op_load_float(
-                op->probabilities,
-                m3_op_element_offset(
-                    op->probabilities, row * vocabulary + index));
-
-            if (!isfinite(probability) || probability < 0.0F) {
-                return m3_error_set(
-                    error, M3_STATUS_OUT_OF_RANGE,
-                    "categorical probability is invalid");
-            }
-            sum = sum + probability;
-        }
-        if (!isfinite(sum) || sum <= 0.0F) {
-            return m3_error_set(error, M3_STATUS_OUT_OF_RANGE,
-                                "categorical row sum is not positive finite");
-        }
-    }
-    return M3_STATUS_OK;
-}
-
-static m3_status m3_host_categorical(const m3_op_categorical *op,
-                                     m3_error *error)
+static m3_status m3_host_categorical(const m3_op_categorical *op)
 {
     size_t vocabulary = (size_t)op->probabilities->metadata.shape[
         op->probabilities->metadata.rank - 1U];
     size_t rows = op->uniforms->metadata.element_count;
     size_t row;
-    m3_status status = m3_host_categorical_preflight(
-        op, rows, vocabulary, error);
 
-    if (status != M3_STATUS_OK) {
-        return status;
-    }
     for (row = 0U; row < rows; ++row) {
         float uniform = m3_op_load_float(
             op->uniforms, m3_op_element_offset(op->uniforms, row));
@@ -155,16 +102,22 @@ static m3_status m3_host_categorical(const m3_op_categorical *op,
         float cumulative = 0.0F;
         float target;
         size_t index;
-        size_t selected = vocabulary - 1U;
+        size_t last_positive = 0U;
+        size_t selected;
 
         for (index = 0U; index < vocabulary; ++index) {
-            sum = sum + m3_op_load_float(
-                            op->probabilities,
-                            m3_op_element_offset(
-                                op->probabilities,
-                                row * vocabulary + index));
+            float probability = m3_op_load_float(
+                op->probabilities,
+                m3_op_element_offset(
+                    op->probabilities, row * vocabulary + index));
+
+            sum = sum + probability;
+            if (probability > 0.0F) {
+                last_positive = index;
+            }
         }
         target = uniform * sum;
+        selected = last_positive;
         for (index = 0U; index < vocabulary; ++index) {
             cumulative = cumulative + m3_op_load_float(
                                           op->probabilities,
@@ -192,8 +145,7 @@ m3_status m3_host_execute_sampling(const m3_command *command,
     case M3_OP_TOP_K:
         return m3_host_top_k(&command->descriptor.top_k, scratch, error);
     case M3_OP_CATEGORICAL:
-        return m3_host_categorical(&command->descriptor.categorical,
-                                   error);
+        return m3_host_categorical(&command->descriptor.categorical);
     default:
         *handled = false;
         return M3_STATUS_OK;

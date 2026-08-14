@@ -183,7 +183,7 @@ static void m3_qwen_layer_test_prior_value(
     }
 }
 
-void m3_test_qwen_step_causal_offset(m3_test_context *test)
+void m3_test_qwen_advance_causal_offset(m3_test_context *test)
 {
     static const float current[] = {
         1.25F, 0.5F, 0.75F, -0.5F,
@@ -200,17 +200,20 @@ void m3_test_qwen_step_causal_offset(m3_test_context *test)
     if (!m3_qwen_test_fixture_init(&fixture, 4U) ||
         !m3_qwen_layer_test_workspace_build(&fixture, 1U, current, &left) ||
         !m3_qwen_layer_test_workspace_build(&fixture, 1U, current, &right)) {
-        M3_TEST_EXPECT(test, false, "initialize Qwen step causal fixtures");
+        M3_TEST_EXPECT(test, false,
+                       "initialize Qwen advance causal fixtures");
         m3_qwen_test_fixture_dispose(&fixture);
         return;
     }
     m3_qwen_layer_test_prior_value(&fixture, false);
     if (!m3_qwen_layer_test_run(&fixture, &left, 2U)) {
-        M3_TEST_EXPECT(test, false, "execute step with original prior values");
+        M3_TEST_EXPECT(test, false,
+                       "execute advance with original prior values");
     }
     m3_qwen_layer_test_prior_value(&fixture, true);
     if (!m3_qwen_layer_test_run(&fixture, &right, 2U)) {
-        M3_TEST_EXPECT(test, false, "execute step with changed prior values");
+        M3_TEST_EXPECT(test, false,
+                       "execute advance with changed prior values");
     }
     for (index = 0U; index < 8U; ++index) {
         prior_visible = prior_visible ||
@@ -228,8 +231,9 @@ void m3_test_qwen_step_causal_offset(m3_test_context *test)
                                   index + 4U) == 0U;
     }
     M3_TEST_EXPECT(test, prior_visible,
-                   "use published position two as causal offset for one-token step");
+                   "use published position two as one-frame causal offset");
     M3_TEST_EXPECT(test, current_written && unused_untouched,
-                   "write only current token-major cache slot at step position");
+                   "write only current token-major cache slot at "
+                   "advance position");
     m3_qwen_test_fixture_dispose(&fixture);
 }

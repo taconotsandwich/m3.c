@@ -25,21 +25,14 @@
 
 typedef struct m3_qwen_runtime m3_qwen_runtime;
 
-/* Logits preserve [conditional, unconditional] row order. EOS is F32 [2,1]
+/* State preserves [conditional, unconditional] row order. Hidden is the
+ * final-normalized BF16 [2,4096] current-position state. EOS is F32 [2,1]
  * and semantics are F32 [2,16384], mapped to IDs 151675..168058. */
 typedef struct {
-    const m3_tensor_view *eos_logits;
-    const m3_tensor_view *semantic_logits;
-} m3_qwen_logits;
-
-typedef struct {
-    /* BF16 [4096], shared by the two identical step-token rows. */
-    const m3_tensor_view *token_embedding;
-    /* Final normalized BF16 [2,4096] current-token hidden rows. */
     const m3_tensor_view *hidden;
     const m3_tensor_view *eos_logits;
     const m3_tensor_view *semantic_logits;
-} m3_qwen_step_result;
+} m3_qwen_state;
 
 /* The immutable staged language model and its backend are borrowed and must
  * outlive the runtime. A successful call's result views borrow runtime-owned
@@ -59,19 +52,26 @@ m3_status m3_qwen_runtime_prefill(m3_qwen_runtime *runtime,
                                   const m3_tensor_view *prompt_ids,
                                   m3_progress_callback progress,
                                   void *progress_context,
-                                  m3_qwen_logits *logits,
+                                  m3_qwen_state *state,
                                   m3_error *error);
 
-/* token_id is an absolute official semantic token ID. The runtime embeds the
- * same token for both rows at the next position. On success it publishes the
- * raw row-independent BF16 token embedding [4096], final normalized BF16
- * hidden rows [2,4096], and next-token F32 logits. */
-m3_status m3_qwen_runtime_step(m3_qwen_runtime *runtime,
-                               uint32_t token_id,
-                               m3_progress_callback progress,
-                               void *progress_context,
-                               m3_qwen_step_result *result,
-                               m3_error *error);
+/* semantic_code is 0..16383. On success, embedding is a BF16 [4096] view
+ * borrowing the immutable language-model table. Lookup does not advance the
+ * cache or invalidate the published state. */
+m3_status m3_qwen_runtime_semantic_embedding(
+    const m3_qwen_runtime *runtime, uint32_t semantic_code,
+    m3_tensor_view *embedding, m3_error *error);
+
+/* Feedback is the complete BF16 [2,1,4096] audio-frame embedding on the
+ * runtime backend. Its conditional and unconditional rows must be
+ * bit-identical. A successful advance appends exactly one cache position and
+ * publishes its final-normalized hidden rows and next-token logits. */
+m3_status m3_qwen_runtime_advance(m3_qwen_runtime *runtime,
+                                  const m3_tensor_view *feedback,
+                                  m3_progress_callback progress,
+                                  void *progress_context,
+                                  m3_qwen_state *state,
+                                  m3_error *error);
 
 uint64_t m3_qwen_runtime_token_count(const m3_qwen_runtime *runtime);
 uint64_t m3_qwen_runtime_cache_capacity(const m3_qwen_runtime *runtime);

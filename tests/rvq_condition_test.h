@@ -41,6 +41,11 @@ bool m3_rc_progress(void *context, uint64_t completed, uint64_t total);
 
 bool m3_rvq_test_fixture_init(m3_rvq_test_fixture *fixture,
                               m3_dtype dtype);
+bool m3_rvq_test_fixture_init_backend(m3_rvq_test_fixture *fixture,
+                                      m3_dtype dtype,
+                                      uint32_t hidden_size,
+                                      m3_backend *backend,
+                                      bool owns_backend);
 void m3_rvq_test_fixture_dispose(m3_rvq_test_fixture *fixture);
 void m3_rvq_test_uniforms(float uniforms[M3_RVQ_RESIDUAL_COUNT],
                           uint32_t codes[M3_RVQ_RESIDUAL_COUNT]);

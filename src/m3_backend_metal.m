@@ -43,8 +43,14 @@ static void m3_metal_destroy(void *opaque_context)
     if (context == NULL) {
         return;
     }
-    m3_metal_release(&context->cast_pipeline);
-    m3_metal_release(&context->copy_pipeline);
+    while (context->pipeline_count != 0U) {
+        m3_metal_pipeline_entry *entry;
+
+        --context->pipeline_count;
+        entry = &context->pipelines[context->pipeline_count];
+        m3_metal_release(&entry->state);
+        entry->name[0] = '\0';
+    }
     m3_metal_release(&context->library);
     m3_metal_release(&context->command_queue);
     m3_metal_release(&context->device);
@@ -86,6 +92,42 @@ static void m3_metal_free(void *context, void *handle, void *data)
     }
 }
 
+bool m3_metal_command_writes_storage(const m3_command *command,
+                                      const m3_storage *storage)
+{
+    return m3_metal_basic_writes_storage(command, storage) ||
+           m3_metal_dense_writes_storage(command, storage) ||
+           m3_metal_attention_writes_storage(command, storage) ||
+           m3_metal_sampling_writes_storage(command, storage) ||
+           m3_metal_convolution_writes_storage(command, storage);
+}
+
+static m3_status m3_metal_preflight_one(const m3_command *commands,
+                                         size_t command_index,
+                                         m3_error *error)
+{
+    m3_status status = m3_metal_preflight_basic(
+        commands, command_index, error);
+
+    if (status == M3_STATUS_OK) {
+        status = m3_metal_preflight_dense(
+            commands, command_index, error);
+    }
+    if (status == M3_STATUS_OK) {
+        status = m3_metal_preflight_attention(
+            commands, command_index, error);
+    }
+    if (status == M3_STATUS_OK) {
+        status = m3_metal_preflight_sampling(
+            commands, command_index, error);
+    }
+    if (status == M3_STATUS_OK) {
+        status = m3_metal_preflight_convolution(
+            commands, command_index, error);
+    }
+    return status;
+}
+
 static m3_status m3_metal_encode_one(
     const m3_metal_context *context,
     id<MTLComputeCommandEncoder> encoder, const m3_command *command,
@@ -101,6 +143,10 @@ static m3_status m3_metal_encode_one(
     }
     if (status == M3_STATUS_OK && !handled) {
         status = m3_metal_encode_attention(
+            context, encoder, command, &handled, error);
+    }
+    if (status == M3_STATUS_OK && !handled) {
+        status = m3_metal_encode_sampling(
             context, encoder, command, &handled, error);
     }
     if (status == M3_STATUS_OK && !handled) {
@@ -151,7 +197,7 @@ static m3_status m3_metal_execute_in_pool(
         status = m3_metal_encode_one(context, encoder, &commands[index],
                                      error);
         if (status == M3_STATUS_OK) {
-            status = m3_metal_preflight_basic(commands, index, error);
+            status = m3_metal_preflight_one(commands, index, error);
         }
         if (status != M3_STATUS_OK) {
             [encoder endEncoding];

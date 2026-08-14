@@ -165,14 +165,36 @@ static bool m3_qwen_test_layer_weights(m3_qwen_test_fixture *fixture)
 bool m3_qwen_test_fixture_init(m3_qwen_test_fixture *fixture,
                                uint64_t capacity)
 {
+    m3_backend *backend = NULL;
+    m3_error error;
+
+    if (m3_backend_create_host(&backend, &error) != M3_STATUS_OK) {
+        return false;
+    }
+    return m3_qwen_test_fixture_init_backend(
+        fixture, capacity, backend, true);
+}
+
+bool m3_qwen_test_fixture_init_backend(m3_qwen_test_fixture *fixture,
+                                       uint64_t capacity,
+                                       m3_backend *backend,
+                                       bool owns_backend)
+{
     m3_error error;
     size_t index;
 
+    if (fixture == NULL || backend == NULL) {
+        if (owns_backend) {
+            m3_backend_free(backend);
+        }
+        return false;
+    }
     (void)memset(fixture, 0, sizeof(*fixture));
     m3_qwen_cache_init(&fixture->cache);
     m3_runtime_workspace_init(&fixture->rope);
     m3_qwen_forward_state_init(&fixture->forward);
-    if (!m3_op_test_fixture_init(&fixture->tensors)) {
+    if (!m3_op_test_fixture_init_backend(
+            &fixture->tensors, backend, owns_backend)) {
         return false;
     }
     fixture->dimensions.vocab_size = 8U;
@@ -236,6 +258,14 @@ bool m3_qwen_test_ids(m3_qwen_test_fixture *fixture,
 
     return m3_op_test_tensor(&fixture->tensors, view, M3_DTYPE_I32, 2U,
                              shape, values);
+}
+
+bool m3_qwen_test_feedback(m3_qwen_test_fixture *fixture,
+                           m3_tensor_view *view, const float *values)
+{
+    const uint64_t shape[] = {2U, 1U, fixture->dimensions.hidden_size};
+
+    return m3_qwen_test_bf16(fixture, view, 3U, shape, values);
 }
 
 uint16_t m3_qwen_test_bf16_at(const m3_tensor_view *view, size_t index)

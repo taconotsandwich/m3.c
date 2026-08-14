@@ -93,13 +93,13 @@ m3_status m3_qwen_runtime_prefill(m3_qwen_runtime *runtime,
                                   const m3_tensor_view *prompt_ids,
                                   m3_progress_callback progress,
                                   void *progress_context,
-                                  m3_qwen_logits *logits,
+                                  m3_qwen_state *state,
                                   m3_error *error)
 {
     m3_qwen_forward_result forward_result;
     m3_status status;
 
-    if (runtime == NULL || logits == NULL) {
+    if (runtime == NULL || state == NULL) {
         return m3_error_set(error, M3_STATUS_INVALID_ARGUMENT,
                             "Qwen runtime and prefill output are required");
     }
@@ -110,76 +110,79 @@ m3_status m3_qwen_runtime_prefill(m3_qwen_runtime *runtime,
     if (status != M3_STATUS_OK) {
         return status;
     }
-    logits->eos_logits = forward_result.eos_logits;
-    logits->semantic_logits = forward_result.semantic_logits;
+    state->hidden = forward_result.hidden;
+    state->eos_logits = forward_result.eos_logits;
+    state->semantic_logits = forward_result.semantic_logits;
     return M3_STATUS_OK;
 }
 
-static m3_status m3_qwen_step_ids(m3_qwen_runtime *runtime,
-                                  uint32_t token_id,
-                                  m3_runtime_workspace *ids,
-                                  m3_error *error)
+m3_status m3_qwen_runtime_semantic_embedding(
+    const m3_qwen_runtime *runtime, uint32_t semantic_code,
+    m3_tensor_view *embedding, m3_error *error)
 {
-    m3_runtime_tensor_spec spec;
-    uint64_t shape[] = {2U, 1U};
-    int32_t values[2];
+    m3_tensor_view row;
+    m3_tensor_view vector;
+    uint64_t shape[1];
+    uint64_t token;
     m3_status status;
 
-    (void)memset(&spec, 0, sizeof(spec));
-    spec.dtype = M3_DTYPE_I32;
-    spec.rank = 2U;
-    spec.shape[0] = shape[0];
-    spec.shape[1] = shape[1];
-    spec.alignment = 64U;
-    status = m3_runtime_workspace_build(
-        ids, runtime->stage->backend, &spec, 1U, error);
+    if (runtime == NULL || embedding == NULL ||
+        runtime->weights.embedding == NULL) {
+        return m3_error_set(
+            error, M3_STATUS_INVALID_ARGUMENT,
+            "Qwen runtime and semantic embedding output are required");
+    }
+    if ((uint64_t)semantic_code >=
+        runtime->dimensions.semantic_token_count) {
+        return m3_error_set(error, M3_STATUS_OUT_OF_RANGE,
+                            "Qwen semantic code is outside 0..16383");
+    }
+    if ((uint64_t)semantic_code >
+        UINT64_MAX - runtime->dimensions.semantic_token_start) {
+        return m3_error_set(error, M3_STATUS_OVERFLOW,
+                            "Qwen semantic embedding row overflows");
+    }
+    token = runtime->dimensions.semantic_token_start + semantic_code;
+    shape[0] = runtime->dimensions.hidden_size;
+    m3_tensor_view_init(&row);
+    m3_tensor_view_init(&vector);
+    status = m3_tensor_slice(runtime->weights.embedding, 0U, token, 1U,
+                             &row, error);
+    if (status == M3_STATUS_OK) {
+        status = m3_tensor_reshape(&row, 1U, shape, &vector, error);
+    }
     if (status != M3_STATUS_OK) {
         return status;
     }
-    values[0] = (int32_t)token_id;
-    values[1] = (int32_t)token_id;
-    return m3_storage_write(ids->storages[0], 0U, values, sizeof(values),
-                            error);
+    *embedding = vector;
+    m3_error_reset(error);
+    return M3_STATUS_OK;
 }
 
-m3_status m3_qwen_runtime_step(m3_qwen_runtime *runtime,
-                               uint32_t token_id,
-                               m3_progress_callback progress,
-                               void *progress_context,
-                               m3_qwen_step_result *result,
-                               m3_error *error)
+m3_status m3_qwen_runtime_advance(m3_qwen_runtime *runtime,
+                                  const m3_tensor_view *feedback,
+                                  m3_progress_callback progress,
+                                  void *progress_context,
+                                  m3_qwen_state *state,
+                                  m3_error *error)
 {
-    m3_runtime_workspace ids;
     m3_qwen_forward_result forward_result;
-    uint64_t semantic_end = (uint64_t)M3_QWEN_SEMANTIC_TOKEN_START +
-                            M3_QWEN_SEMANTIC_TOKEN_COUNT;
     m3_status status;
 
-    if (runtime == NULL || result == NULL) {
+    if (runtime == NULL || state == NULL) {
         return m3_error_set(error, M3_STATUS_INVALID_ARGUMENT,
-                            "Qwen runtime and step output are required");
+                            "Qwen runtime and advance output are required");
     }
-    if ((uint64_t)token_id < M3_QWEN_SEMANTIC_TOKEN_START ||
-        (uint64_t)token_id >= semantic_end) {
-        return m3_error_set(error, M3_STATUS_OUT_OF_RANGE,
-                            "Qwen step token is not an official semantic token");
-    }
-    m3_runtime_workspace_init(&ids);
     (void)memset(&forward_result, 0, sizeof(forward_result));
-    status = m3_qwen_step_ids(runtime, token_id, &ids, error);
-    if (status == M3_STATUS_OK) {
-        status = m3_qwen_forward_execute(
-            &runtime->forward, M3_QWEN_FORWARD_STEP, &ids.views[0],
-            progress, progress_context, &forward_result, error);
-    }
-    m3_runtime_workspace_dispose(&ids);
+    status = m3_qwen_forward_execute(
+        &runtime->forward, M3_QWEN_FORWARD_ADVANCE, feedback, progress,
+        progress_context, &forward_result, error);
     if (status != M3_STATUS_OK) {
         return status;
     }
-    result->token_embedding = forward_result.token_embedding;
-    result->hidden = forward_result.hidden;
-    result->eos_logits = forward_result.eos_logits;
-    result->semantic_logits = forward_result.semantic_logits;
+    state->hidden = forward_result.hidden;
+    state->eos_logits = forward_result.eos_logits;
+    state->semantic_logits = forward_result.semantic_logits;
     return M3_STATUS_OK;
 }
 

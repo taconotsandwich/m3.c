@@ -183,6 +183,69 @@ static m3_status m3_op_validate_softmax(const m3_backend *backend,
     return status;
 }
 
+static m3_status m3_op_validate_snake1d(const m3_backend *backend,
+                                        const m3_op_snake1d *op,
+                                        m3_error *error)
+{
+    m3_status status = m3_op_check_view(backend, op->input, false,
+                                       "Snake1d input", error);
+
+    if (status == M3_STATUS_OK) {
+        status = m3_op_check_view(backend, op->alpha, false,
+                                  "Snake1d alpha", error);
+    }
+    if (status == M3_STATUS_OK) {
+        status = m3_op_check_view(backend, op->output, true,
+                                  "Snake1d output", error);
+    }
+    if (status != M3_STATUS_OK) {
+        return status;
+    }
+    if (op->input->metadata.dtype != M3_DTYPE_F32 ||
+        op->alpha->metadata.dtype != M3_DTYPE_F32 ||
+        op->output->metadata.dtype != M3_DTYPE_F32 ||
+        op->input->metadata.rank != 3U ||
+        op->alpha->metadata.rank != 3U ||
+        op->output->metadata.rank != 3U) {
+        return m3_error_set(error, M3_STATUS_INVALID_ARGUMENT,
+                            "Snake1d requires rank-3 F32 tensors");
+    }
+    if (!m3_op_shape_equal(op->input, op->output) ||
+        op->alpha->metadata.shape[0] != 1U ||
+        op->alpha->metadata.shape[1] != op->input->metadata.shape[1] ||
+        op->alpha->metadata.shape[2] != 1U) {
+        return m3_error_set(error, M3_STATUS_INVALID_ARGUMENT,
+                            "Snake1d alpha or output shape is invalid");
+    }
+    status = m3_op_check_alias(op->output, op->input, true,
+                               "Snake1d input", error);
+    if (status == M3_STATUS_OK) {
+        status = m3_op_check_alias(op->output, op->alpha, false,
+                                   "Snake1d alpha", error);
+    }
+    return status;
+}
+
+static m3_status m3_op_validate_tanh(const m3_backend *backend,
+                                     const m3_op_unary *op,
+                                     m3_error *error)
+{
+    m3_status status = m3_op_validate_unary_views(backend, op, error);
+
+    if (status == M3_STATUS_OK &&
+        (op->input->metadata.dtype != M3_DTYPE_F32 ||
+         op->output->metadata.dtype != M3_DTYPE_F32 ||
+         op->input->metadata.rank == 0U)) {
+        status = m3_error_set(error, M3_STATUS_INVALID_ARGUMENT,
+                              "tanh requires rank-1 through rank-8 F32 tensors");
+    }
+    if (status == M3_STATUS_OK) {
+        status = m3_op_check_alias(op->output, op->input, true, "tanh",
+                                   error);
+    }
+    return status;
+}
+
 m3_status m3_op_validate_basic(const m3_backend *backend,
                                const m3_command *command,
                                bool *handled, m3_error *error)
@@ -213,6 +276,12 @@ m3_status m3_op_validate_basic(const m3_backend *backend,
     case M3_OP_SOFTMAX:
         return m3_op_validate_softmax(backend,
                                       &command->descriptor.softmax, error);
+    case M3_OP_SNAKE1D:
+        return m3_op_validate_snake1d(backend,
+                                      &command->descriptor.snake1d, error);
+    case M3_OP_TANH:
+        return m3_op_validate_tanh(backend, &command->descriptor.tanh,
+                                   error);
     default:
         *handled = false;
         return M3_STATUS_OK;

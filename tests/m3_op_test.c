@@ -7,13 +7,32 @@
 
 bool m3_op_test_fixture_init(m3_op_test_fixture *fixture)
 {
+    m3_backend *backend = NULL;
     m3_error error;
 
     if (fixture == NULL) {
         return false;
     }
+    if (m3_backend_create_host(&backend, &error) != M3_STATUS_OK) {
+        return false;
+    }
+    return m3_op_test_fixture_init_backend(fixture, backend, true);
+}
+
+bool m3_op_test_fixture_init_backend(m3_op_test_fixture *fixture,
+                                     m3_backend *backend,
+                                     bool owns_backend)
+{
+    if (fixture == NULL || backend == NULL) {
+        if (owns_backend) {
+            m3_backend_free(backend);
+        }
+        return false;
+    }
     (void)memset(fixture, 0, sizeof(*fixture));
-    return m3_backend_create_host(&fixture->backend, &error) == M3_STATUS_OK;
+    fixture->backend = backend;
+    fixture->owns_backend = owns_backend;
+    return true;
 }
 
 void m3_op_test_fixture_dispose(m3_op_test_fixture *fixture)
@@ -26,7 +45,9 @@ void m3_op_test_fixture_dispose(m3_op_test_fixture *fixture)
     for (index = fixture->storage_count; index > 0U; --index) {
         m3_storage_free(fixture->storages[index - 1U]);
     }
-    m3_backend_free(fixture->backend);
+    if (fixture->owns_backend) {
+        m3_backend_free(fixture->backend);
+    }
     (void)memset(fixture, 0, sizeof(*fixture));
 }
 

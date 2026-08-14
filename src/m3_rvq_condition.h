@@ -43,8 +43,16 @@ typedef struct {
     uint32_t codes[M3_RVQ_RESIDUAL_COUNT];
 } m3_rvq_frame;
 
+typedef struct {
+    m3_storage *storage;
+    /* Complete conditional/unconditional BF16 audio embedding [2,1,4096]. */
+    m3_tensor_view tensor;
+} m3_rvq_feedback;
+
 void m3_rvq_frame_init(m3_rvq_frame *frame);
 void m3_rvq_frame_dispose(m3_rvq_frame *frame);
+void m3_rvq_feedback_init(m3_rvq_feedback *feedback);
+void m3_rvq_feedback_dispose(m3_rvq_feedback *feedback);
 
 m3_status m3_rvq_weights_bind(const m3_weight_stage *stage,
                               m3_rvq_weights *weights, m3_error *error);
@@ -54,6 +62,13 @@ m3_status m3_rvq_decode_frame(
     const m3_tensor_view *semantic_embedding, const float *uniforms,
     size_t uniform_count, m3_progress_callback progress,
     void *progress_context, m3_rvq_frame *frame, m3_error *error);
+
+/* Builds complete-frame Qwen feedback from a decoded frame. The semantic
+ * embedding is BF16 [4096]. On failure, feedback remains unchanged. */
+m3_status m3_rvq_feedback_build(
+    m3_backend *backend, const m3_rvq_weights *weights,
+    const m3_tensor_view *semantic_embedding, const m3_rvq_frame *frame,
+    m3_rvq_feedback *feedback, m3_error *error);
 
 typedef struct {
     const m3_tensor_view *layer_weight_logits;

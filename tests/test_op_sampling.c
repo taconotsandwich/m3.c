@@ -114,6 +114,11 @@ void m3_test_op_sampling(m3_test_context *test)
     const float uniforms[] = {0.0F, 0.2F, 0.5F, 0.999F};
     const int32_t categorical_sentinel[] = {-4, -4, -4, -4};
     const int32_t categorical_expected[] = {0, 1, 2, 2};
+    const uint64_t fallback_probability_shape[] = {1U, 3U};
+    const uint64_t fallback_row_shape[] = {1U};
+    const float fallback_probabilities[] = {0.0F, 0x1p-126F, 0.0F};
+    const float fallback_uniform[] = {0x1.fffffep-1F};
+    const int32_t fallback_sentinel[] = {-1};
     m3_op_test_fixture fixture;
     m3_tensor_view logits;
     m3_tensor_view top_values;
@@ -121,6 +126,9 @@ void m3_test_op_sampling(m3_test_context *test)
     m3_tensor_view probability_view;
     m3_tensor_view uniform_view;
     m3_tensor_view categorical_output;
+    m3_tensor_view fallback_probability_view;
+    m3_tensor_view fallback_uniform_view;
+    m3_tensor_view fallback_output;
     m3_command command;
     m3_error error;
     size_t scratch_bytes = 0U;
@@ -206,5 +214,26 @@ void m3_test_op_sampling(m3_test_context *test)
                               categorical_sentinel,
                               sizeof(categorical_sentinel)) == 0,
                    "invalid later categorical row leaves all rows unchanged");
+    M3_TEST_EXPECT(
+        test,
+        m3_op_test_tensor(&fixture, &fallback_probability_view,
+                          M3_DTYPE_F32, 2U, fallback_probability_shape,
+                          fallback_probabilities) &&
+            m3_op_test_tensor(&fixture, &fallback_uniform_view,
+                              M3_DTYPE_F32, 1U, fallback_row_shape,
+                              fallback_uniform) &&
+            m3_op_test_tensor(&fixture, &fallback_output, M3_DTYPE_I32, 1U,
+                              fallback_row_shape, fallback_sentinel),
+        "create categorical rounded-target fallback tensors");
+    command.descriptor.categorical.probabilities =
+        &fallback_probability_view;
+    command.descriptor.categorical.uniforms = &fallback_uniform_view;
+    command.descriptor.categorical.output = &fallback_output;
+    M3_TEST_EXPECT(
+        test,
+        m3_op_test_execute(&fixture, &command, 1U, NULL, &error) ==
+                M3_STATUS_OK &&
+            m3_op_test_i32(&fallback_output)[0] == 1,
+        "categorical rounded-target fallback selects the last positive bin");
     m3_op_test_fixture_dispose(&fixture);
 }

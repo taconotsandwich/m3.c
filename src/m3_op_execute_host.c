@@ -7,9 +7,11 @@ static m3_status m3_host_execute_one(const m3_command *command,
                                      m3_error *error)
 {
     bool handled = false;
-    m3_status status = m3_host_execute_basic(command, scratch, &handled,
-                                             error);
+    m3_status status = m3_command_data_preflight(command, error);
 
+    if (status == M3_STATUS_OK) {
+        status = m3_host_execute_basic(command, scratch, &handled, error);
+    }
     if (status == M3_STATUS_OK && !handled) {
         status = m3_host_execute_dense(command, scratch, &handled, error);
     }
