@@ -311,6 +311,11 @@ m3_backend *m3_storage_backend(const m3_storage *storage)
     return storage == NULL ? NULL : storage->owner;
 }
 
+void *m3_storage_handle_internal(const m3_storage *storage)
+{
+    return storage == NULL ? NULL : storage->handle;
+}
+
 m3_status m3_storage_write(m3_storage *storage, size_t byte_offset,
                            const void *source, size_t byte_count,
                            m3_error *error)

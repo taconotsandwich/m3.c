@@ -277,10 +277,11 @@ void m3_test_op_metal_unsupported(m3_test_context *test)
                        m3_tensor_view_contiguous(
                            &output, output_storage, M3_DTYPE_F32, 1U, shape,
                            0U, &error) == M3_STATUS_OK,
-                   "create Metal copy tensors");
-    command.kind = M3_OP_COPY;
-    command.descriptor.copy.input = &input;
-    command.descriptor.copy.output = &output;
+                   "create unsupported Metal operation tensors");
+    command.kind = M3_OP_ADD;
+    command.descriptor.add.left = &input;
+    command.descriptor.add.right = &input;
+    command.descriptor.add.output = &output;
     M3_TEST_EXPECT(test,
                    m3_backend_execute(backend, NULL, 0U, NULL, &error) ==
                        M3_STATUS_OK,
