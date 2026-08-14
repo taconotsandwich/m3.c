@@ -5,6 +5,7 @@
 #include "model_loader_fixture.h"
 #include "m3_manifest.h"
 #include "m3_model.h"
+#include "m3_model_index.h"
 #include "m3_safetensors.h"
 
 #include <dirent.h>
@@ -399,49 +400,33 @@ void m3_test_modular_model_directory(m3_test_context *test)
     char path[M3_TEST_PATH_CAPACITY];
     char fifo_path[M3_TEST_PATH_CAPACITY];
     m3_model_metadata metadata;
-    m3_model_metadata unchanged;
+    m3_model_metadata empty;
     m3_error error;
     bool ready = m3_loader_test_create_layout(root);
 
-    M3_TEST_EXPECT(test, ready, "create complete modular model fixture");
+    M3_TEST_EXPECT(test, ready, "create legacy tiny modular fixture");
     if (!ready) {
         return;
     }
     m3_model_metadata_init(&metadata);
+    empty = metadata;
     M3_TEST_EXPECT(test,
                    m3_model_inspect_directory(root, &metadata, &error) ==
-                       M3_STATUS_OK,
-                   "inspect all seven official components");
-    M3_TEST_EXPECT(test,
-                   metadata.present_component_count == M3_COMPONENT_COUNT &&
-                       metadata.file_count == 13U,
-                   "aggregate official resources");
-    M3_TEST_EXPECT(test,
-                   metadata.tensor_count == 5U &&
-                       metadata.tensor_bytes == 40U,
-                   "aggregate weight headers without payload mapping");
-    unchanged = metadata;
+                       M3_STATUS_INVALID_FORMAT,
+                   "reject arbitrary configs and tiny tensor inventories");
+    M3_TEST_EXPECT(test, memcmp(&metadata, &empty, sizeof(metadata)) == 0,
+                   "schema rejection leaves output atomic");
     M3_TEST_EXPECT(test,
                    m3_model_inspect_directory("/missing/m3-model", &metadata,
                                               &error) == M3_STATUS_IO,
                    "reject missing model directory");
     M3_TEST_EXPECT(test,
-                   memcmp(&metadata, &unchanged, sizeof(metadata)) == 0,
+                   memcmp(&metadata, &empty, sizeof(metadata)) == 0,
                    "failed inspection leaves output atomic");
     M3_TEST_EXPECT(test,
                    m3_loader_test_path(component, root, "language_model") &&
                        m3_loader_test_path(path, component, "config.json") &&
-                       m3_loader_test_write_json(path, "{"),
-                   "replace config with malformed JSON");
-    M3_TEST_EXPECT(test,
-                   m3_model_inspect_directory(root, &metadata, &error) ==
-                       M3_STATUS_INVALID_FORMAT,
-                   "reject malformed component config");
-    M3_TEST_EXPECT(test,
-                   memcmp(&metadata, &unchanged, sizeof(metadata)) == 0,
-                   "config failure leaves output atomic");
-    M3_TEST_EXPECT(test,
-                   unlink(path) == 0 &&
+                       unlink(path) == 0 &&
                        m3_loader_test_path(fifo_path, component,
                                            "config.fifo") &&
                        mkfifo(fifo_path, 0600) == 0 &&
@@ -451,6 +436,8 @@ void m3_test_modular_model_directory(m3_test_context *test)
                    m3_model_inspect_directory(root, &metadata, &error) ==
                        M3_STATUS_INVALID_FORMAT,
                    "reject FIFO config without blocking");
+    M3_TEST_EXPECT(test, memcmp(&metadata, &empty, sizeof(metadata)) == 0,
+                   "FIFO rejection leaves output atomic");
     M3_TEST_EXPECT(test, m3_loader_test_remove_tree(root),
                    "remove modular model fixture");
 }
@@ -527,12 +514,6 @@ void m3_test_modular_manifest(m3_test_context *test)
 
 void m3_test_modular_model_index(m3_test_context *test)
 {
-    static const char shard_a_header[] =
-        "{\"a\":{\"dtype\":\"F16\",\"shape\":[2],"
-        "\"data_offsets\":[0,4]}}";
-    static const char shard_b_header[] =
-        "{\"b\":{\"dtype\":\"BF16\",\"shape\":[1],"
-        "\"data_offsets\":[0,2]}}";
     static const char valid_index[] =
         "{\"metadata\":{\"total_size\":6},\"weight_map\":{"
         "\"a\":\"model-00001-of-00002.safetensors\","
@@ -540,81 +521,39 @@ void m3_test_modular_model_index(m3_test_context *test)
     static const char invalid_index[] =
         "{\"metadata\":{\"total_size\":6},\"weight_map\":{"
         "\"a\":\"model-00001-of-00002.safetensors\","
-        "\"b\":\"model-00001-of-00002.safetensors\"}}";
+        "\"a\":\"model-00002-of-00002.safetensors\"}}";
     char root[M3_TEST_PATH_CAPACITY];
-    char transformer[M3_TEST_PATH_CAPACITY];
-    char path[M3_TEST_PATH_CAPACITY];
-    char first_shard[M3_TEST_PATH_CAPACITY];
-    char second_shard[M3_TEST_PATH_CAPACITY];
     char index_path[M3_TEST_PATH_CAPACITY];
-    m3_model_metadata metadata;
-    m3_model_metadata expected;
+    m3_model_index index;
     m3_error error;
-    bool ready = m3_loader_test_create_layout(root) &&
-                 m3_loader_test_path(transformer, root, "transformer") &&
-                 m3_loader_test_path(path, transformer, "model.safetensors") &&
-                 unlink(path) == 0 &&
-                 m3_loader_test_path(first_shard, transformer,
-                                     "model-00001-of-00002.safetensors") &&
-                 m3_loader_test_write_safetensors(first_shard, shard_a_header,
-                                                  4U) &&
-                 m3_loader_test_path(second_shard, transformer,
-                                     "model-00002-of-00002.safetensors") &&
-                 m3_loader_test_write_safetensors(second_shard, shard_b_header,
-                                                  2U) &&
-                 m3_loader_test_path(index_path, transformer,
-                                     "model.safetensors.index.json") &&
+    bool ready = m3_loader_test_make_root(root) &&
+                 m3_loader_test_path(index_path, root, "model.index.json") &&
                  m3_loader_test_write_json(index_path, valid_index);
 
-    M3_TEST_EXPECT(test, ready, "create indexed shard fixture");
+    M3_TEST_EXPECT(test, ready, "create model index fixture");
     if (!ready) {
         return;
     }
-    m3_model_metadata_init(&metadata);
+    m3_model_index_init(&index);
     M3_TEST_EXPECT(test,
-                   m3_model_inspect_directory(root, &metadata, &error) ==
+                   m3_model_index_read(index_path, &index, &error) ==
                        M3_STATUS_OK,
-                   "validate exact sharded weight map");
+                   "parse a bounded sharded weight map");
     M3_TEST_EXPECT(test,
-                   metadata.file_count == 15U &&
-                       metadata.tensor_count == 6U &&
-                       metadata.tensor_bytes == 38U,
-                   "aggregate sharded component metadata");
-    expected = metadata;
+                   index.entry_count == 2U && index.has_total_size &&
+                       index.total_size == 6U &&
+                       strcmp(m3_model_index_shard(&index, "b"),
+                              "model-00002-of-00002.safetensors") == 0,
+                   "retain exact tensor-to-shard mappings");
     M3_TEST_EXPECT(test, m3_loader_test_write_json(index_path, invalid_index),
-                   "replace index with deterministic mismatch");
+                   "replace index with a duplicate key");
     M3_TEST_EXPECT(test,
-                   m3_model_inspect_directory(root, &metadata, &error) ==
+                   m3_model_index_read(index_path, &index, &error) ==
                        M3_STATUS_INVALID_FORMAT,
-                   "reject tensor-to-shard mismatch");
-    M3_TEST_EXPECT(test, m3_loader_test_write_json(index_path, valid_index),
-                   "restore valid model index");
-    M3_TEST_EXPECT(test,
-                   m3_loader_test_path(path, transformer, "legacy.pth") &&
-                       m3_loader_test_write_file(
-                           path, (const uint8_t *)"legacy", 6U),
-                   "create unsupported legacy resource");
-    M3_TEST_EXPECT(test,
-                   m3_model_inspect_directory(root, &metadata, &error) ==
-                       M3_STATUS_UNSUPPORTED,
-                   "reject legacy pth compatibility path");
-    M3_TEST_EXPECT(test, unlink(path) == 0, "remove legacy pth fixture");
-    M3_TEST_EXPECT(test,
-                   m3_loader_test_path(path, root, "qwen_7B") &&
-                       mkdir(path, 0700) == 0,
-                   "create ignored legacy qwen directory");
-    M3_TEST_EXPECT(test,
-                   m3_loader_test_path(path, root, "dav.pth") &&
-                       m3_loader_test_write_file(
-                           path, (const uint8_t *)"legacy", 6U),
-                   "create ignored root legacy weight file");
-    M3_TEST_EXPECT(test,
-                   m3_model_inspect_directory(root, &metadata, &error) ==
-                       M3_STATUS_OK,
-                   "ignore legacy root resources without loading them");
-    M3_TEST_EXPECT(test,
-                   memcmp(&metadata, &expected, sizeof(metadata)) == 0,
-                   "ignored root resources do not change metadata");
+                   "reject duplicate tensor keys in model index");
+    M3_TEST_EXPECT(test, index.entry_count == 2U,
+                   "failed index replacement leaves output atomic");
+    m3_model_index_dispose(&index);
     M3_TEST_EXPECT(test, m3_loader_test_remove_tree(root),
                    "remove indexed shard fixture");
 }

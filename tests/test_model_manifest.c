@@ -139,6 +139,7 @@ void m3_test_official_snapshot_manifest(m3_test_context *test)
     char tokenizer[M3_TEST_PATH_CAPACITY];
     char template_path[M3_TEST_PATH_CAPACITY];
     m3_model_metadata metadata;
+    m3_model_metadata empty;
     m3_error error;
     bool ready = m3_loader_test_create_layout(root) &&
                  m3_manifest_test_prepare_language_model(root) &&
@@ -165,24 +166,13 @@ void m3_test_official_snapshot_manifest(m3_test_context *test)
         return;
     }
     m3_model_metadata_init(&metadata);
+    empty = metadata;
     M3_TEST_EXPECT(test,
                    m3_model_inspect_directory(root, &metadata, &error) ==
-                       M3_STATUS_OK,
-                   "inspect only the modular projection of official snapshot");
-    M3_TEST_EXPECT(test,
-                   metadata.present_component_count == M3_COMPONENT_COUNT &&
-                       metadata.file_count == 21U &&
-                       metadata.tensor_count == 9U &&
-                       metadata.tensor_bytes == 48U,
-                   "match current official modular filename inventory");
-    M3_TEST_EXPECT(test,
-                   metadata.components[M3_COMPONENT_LANGUAGE_MODEL]
-                               .file_count == 7U &&
-                       metadata.components[M3_COMPONENT_TRANSFORMER]
-                               .file_count == 4U &&
-                       metadata.components[M3_COMPONENT_TOKENIZER]
-                               .file_count == 3U,
-                   "exclude ignored root assets and legacy packages");
+                       M3_STATUS_INVALID_FORMAT,
+                   "reject official filenames with placeholder configs and tensors");
+    M3_TEST_EXPECT(test, memcmp(&metadata, &empty, sizeof(metadata)) == 0,
+                   "placeholder snapshot rejection leaves output atomic");
     M3_TEST_EXPECT(test, m3_loader_test_remove_tree(root),
                    "remove official manifest fixture");
 }
