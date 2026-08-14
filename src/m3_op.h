@@ -26,7 +26,10 @@ typedef enum {
     M3_OP_GATED_SILU,
     M3_OP_SOFTMAX,
     M3_OP_TOP_K,
-    M3_OP_CATEGORICAL
+    M3_OP_CATEGORICAL,
+    M3_OP_CONV1D,
+    M3_OP_CONV_TRANSPOSE1D,
+    M3_OP_NEAREST_RESIZE1D
 } m3_op_kind;
 
 typedef enum {
@@ -114,6 +117,31 @@ typedef struct {
 } m3_op_categorical;
 
 typedef struct {
+    const m3_tensor_view *input;
+    const m3_tensor_view *weight;
+    const m3_tensor_view *bias;
+    m3_tensor_view *output;
+    uint64_t groups;
+    uint64_t stride;
+    uint64_t dilation;
+    uint64_t pad_left;
+    uint64_t pad_right;
+} m3_op_conv1d;
+
+typedef struct {
+    const m3_tensor_view *input;
+    const m3_tensor_view *weight;
+    const m3_tensor_view *bias;
+    m3_tensor_view *output;
+    uint64_t groups;
+    uint64_t stride;
+    uint64_t dilation;
+    uint64_t pad_left;
+    uint64_t pad_right;
+    uint64_t output_padding;
+} m3_op_conv_transpose1d;
+
+typedef struct {
     m3_op_kind kind;
     union {
         m3_op_unary copy;
@@ -131,6 +159,9 @@ typedef struct {
         m3_op_unary softmax;
         m3_op_top_k top_k;
         m3_op_categorical categorical;
+        m3_op_conv1d conv1d;
+        m3_op_conv_transpose1d conv_transpose1d;
+        m3_op_unary nearest_resize1d;
     } descriptor;
 } m3_command;
 

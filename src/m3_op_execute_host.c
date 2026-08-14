@@ -22,6 +22,10 @@ static m3_status m3_host_execute_one(const m3_command *command,
                                           error);
     }
     if (status == M3_STATUS_OK && !handled) {
+        status = m3_host_execute_convolution(command, scratch, &handled,
+                                             error);
+    }
+    if (status == M3_STATUS_OK && !handled) {
         status = m3_error_set(error, M3_STATUS_INTERNAL,
                               "validated operation has no host executor");
     }

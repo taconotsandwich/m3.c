@@ -40,6 +40,9 @@ m3_status m3_op_validate_nn(const m3_backend *backend,
 m3_status m3_op_validate_sampling(const m3_backend *backend,
                                   const m3_command *command,
                                   bool *handled, m3_error *error);
+m3_status m3_op_validate_convolution(const m3_backend *backend,
+                                     const m3_command *command,
+                                     bool *handled, m3_error *error);
 m3_status m3_op_command_scratch(const m3_command *command,
                                 size_t *byte_count, m3_error *error);
 
@@ -66,6 +69,9 @@ m3_status m3_host_execute_attention(const m3_command *command,
 m3_status m3_host_execute_sampling(const m3_command *command,
                                    m3_scratch_arena *scratch,
                                    bool *handled, m3_error *error);
+m3_status m3_host_execute_convolution(const m3_command *command,
+                                      m3_scratch_arena *scratch,
+                                      bool *handled, m3_error *error);
 m3_status m3_host_execute_commands(void *context,
                                    const m3_command *commands,
                                    size_t command_count,

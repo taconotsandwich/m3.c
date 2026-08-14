@@ -251,6 +251,10 @@ m3_status m3_command_validate(const m3_backend *backend,
         status = m3_op_validate_sampling(backend, command, &handled, error);
     }
     if (status == M3_STATUS_OK && !handled) {
+        status = m3_op_validate_convolution(backend, command, &handled,
+                                            error);
+    }
+    if (status == M3_STATUS_OK && !handled) {
         status = m3_error_set(error, M3_STATUS_UNSUPPORTED,
                               "unsupported operation kind %d",
                               (int)command->kind);
