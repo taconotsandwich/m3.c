@@ -13,6 +13,7 @@
 #include "cases/metal_runtime.inc"
 #include "cases/prompt_tokenizer.inc"
 #include "cases/host_utilities.inc"
+#include "cases/guided_sampling.inc"
 #include "cases/qwen_runtime.inc"
 #include "cases/rvq_condition.inc"
 #include "cases/flow_runtime.inc"
