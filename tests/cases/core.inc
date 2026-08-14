@@ -10,6 +10,21 @@ M3_TEST_CASE(m3_test_tensor_view_rejections, "tensor view rejections")
 M3_TEST_CASE(m3_test_scratch_arena, "scratch arena")
 M3_TEST_CASE(m3_test_weight_bindings, "weight bindings")
 M3_TEST_CASE(m3_test_weight_binding_rejections, "weight binding rejections")
+M3_TEST_CASE(m3_test_weight_stage_load, "stage exact component weights")
+M3_TEST_CASE(m3_test_weight_stage_snapshot_rejections,
+             "reject changed staged-weight shards")
+M3_TEST_CASE(m3_test_weight_stage_io_recovery,
+             "recover exact staged-weight reads")
+M3_TEST_CASE(m3_test_weight_stage_io_failures,
+             "contain staged-weight I/O failures")
+M3_TEST_CASE(m3_test_weight_stage_cancellation,
+             "cancel staged-weight loading atomically")
+M3_TEST_CASE(m3_test_weight_stage_preflight_limits,
+             "preflight staged-weight backend limits")
+M3_TEST_CASE(m3_test_weight_stage_allocation_failure,
+             "contain staged-weight allocation failure")
+M3_TEST_CASE(m3_test_weight_stage_contract_rejections,
+             "reject invalid staged-weight contracts")
 M3_TEST_CASE(m3_test_op_conversions, "operation numeric conversions")
 M3_TEST_CASE(m3_test_op_broadcast_embedding, "broadcast and embedding operations")
 M3_TEST_CASE(m3_test_op_dense_norms, "dense and normalization operations")
