@@ -23,6 +23,7 @@ int m3_test_run(const char *suite_name, const m3_test_case *cases,
 {
     size_t total_checks = 0U;
     size_t total_failures = 0U;
+    size_t total_skipped = 0U;
     size_t index;
 
     if (suite_name == NULL || cases == NULL || case_count == 0U) {
@@ -31,7 +32,7 @@ int m3_test_run(const char *suite_name, const m3_test_case *cases,
     }
 
     for (index = 0U; index < case_count; ++index) {
-        m3_test_context test = {cases[index].name, 0U, 0U};
+        m3_test_context test = {cases[index].name, 0U, 0U, false};
 
         if (cases[index].name == NULL || cases[index].function == NULL) {
             (void)fprintf(stderr, "invalid test case at index %zu\n", index);
@@ -41,6 +42,9 @@ int m3_test_run(const char *suite_name, const m3_test_case *cases,
         cases[index].function(&test);
         total_checks += test.check_count;
         total_failures += test.failure_count;
+        if (test.skipped) {
+            total_skipped += 1U;
+        }
     }
 
     if (total_failures != 0U) {
@@ -49,9 +53,21 @@ int m3_test_run(const char *suite_name, const m3_test_case *cases,
         return 1;
     }
 
-    (void)printf("%s: %zu cases, %zu checks passed\n", suite_name,
-                 case_count, total_checks);
+    (void)printf("%s: %zu cases, %zu checks passed, %zu skipped\n",
+                 suite_name, case_count, total_checks, total_skipped);
     return 0;
+}
+
+void m3_test_skip(m3_test_context *test, const char *reason,
+                  const char *file, int line)
+{
+    if (test == NULL || test->skipped) {
+        return;
+    }
+
+    test->skipped = true;
+    (void)fprintf(stderr, "%s:%d: SKIP [%s] %s\n", file, line,
+                  test->case_name, reason != NULL ? reason : "no reason");
 }
 
 void m3_test_expect(m3_test_context *test, bool condition,

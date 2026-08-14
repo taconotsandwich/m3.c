@@ -46,5 +46,8 @@ m3_status m3_model_metadata_add_file(m3_model_metadata *metadata,
 m3_status m3_model_metadata_add_tensor(m3_model_metadata *metadata,
                                        m3_component_id id, size_t byte_count,
                                        m3_error *error);
+m3_status m3_model_inspect_directory(const char *path,
+                                     m3_model_metadata *metadata,
+                                     m3_error *error);
 
 #endif
