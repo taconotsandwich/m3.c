@@ -239,6 +239,10 @@ static m3_status m3_host_attention(const m3_op_attention *op,
                         op, batch, query_head, kv_head, query, key, depth);
                 }
                 m3_host_attention_softmax(scores, key_count);
+                for (key = 0U; key < key_count; ++key) {
+                    scores[key] = m3_op_round_float(
+                        op->query->metadata.dtype, scores[key]);
+                }
                 for (channel = 0U; channel < depth; ++channel) {
                     float sum = 0.0F;
 

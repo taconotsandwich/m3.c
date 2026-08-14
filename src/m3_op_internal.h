@@ -51,6 +51,7 @@ size_t m3_op_broadcast_offset(const m3_tensor_view *input,
                               const m3_tensor_view *output,
                               size_t output_flat_index);
 float m3_op_load_float(const m3_tensor_view *view, size_t byte_offset);
+float m3_op_round_float(m3_dtype dtype, float value);
 int32_t m3_op_load_i32(const m3_tensor_view *view, size_t byte_offset);
 void m3_op_store_float(m3_tensor_view *view, size_t byte_offset,
                        float value);

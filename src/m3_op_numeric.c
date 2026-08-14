@@ -207,6 +207,20 @@ int32_t m3_op_load_i32(const m3_tensor_view *view, size_t byte_offset)
     return value;
 }
 
+float m3_op_round_float(m3_dtype dtype, float value)
+{
+    switch (dtype) {
+    case M3_DTYPE_F32:
+        return value;
+    case M3_DTYPE_F16:
+        return m3_op_f16_to_f32(m3_op_f32_to_f16(value));
+    case M3_DTYPE_BF16:
+        return m3_op_bf16_to_f32(m3_op_f32_to_bf16(value));
+    default:
+        return NAN;
+    }
+}
+
 void m3_op_store_float(m3_tensor_view *view, size_t byte_offset, float value)
 {
     uint8_t *base = m3_storage_data(view->storage);

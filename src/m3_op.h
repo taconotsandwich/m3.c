@@ -167,7 +167,11 @@ typedef struct {
 
 /* Commands borrow their views. Inputs may be strided; outputs are contiguous.
  * Host softmax and attention map an all -INFINITY row to zeros and divide
- * probability equally among only the +INFINITY maxima when any are present. */
+ * probability equally among only the +INFINITY maxima when any are present.
+ * Attention computes softmax in F32, then rounds its probabilities to the
+ * query dtype before multiplying by values. RMSNorm rounds normalized values
+ * to the input dtype before scaling; gated SiLU rounds its activation to the
+ * gate dtype before multiplying by the up projection. */
 
 m3_status m3_command_validate(const m3_backend *backend,
                               const m3_command *command,

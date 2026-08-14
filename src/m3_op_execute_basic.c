@@ -139,7 +139,10 @@ static m3_status m3_host_gated_silu(const m3_op_binary *op)
         size_t up_offset = m3_op_element_offset(op->right, index);
         float gate = m3_op_load_float(op->left, gate_offset);
         float up = m3_op_load_float(op->right, up_offset);
-        float result = (gate / (1.0F + expf(-gate))) * up;
+        float activation = m3_op_round_float(
+            op->left->metadata.dtype,
+            gate / (1.0F + expf(-gate)));
+        float result = activation * up;
 
         m3_op_store_float(op->output,
                           m3_op_element_offset(op->output, index), result);
