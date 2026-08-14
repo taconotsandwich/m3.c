@@ -25,8 +25,7 @@ enum {
 };
 
 enum {
-    M3_QWEN_RESULT_EMBEDDING = 0,
-    M3_QWEN_RESULT_HIDDEN,
+    M3_QWEN_RESULT_HIDDEN = 0,
     M3_QWEN_RESULT_EOS_BF16,
     M3_QWEN_RESULT_SEMANTIC_BF16,
     M3_QWEN_RESULT_EOS_F32,
@@ -101,13 +100,10 @@ static m3_status m3_qwen_result_build(
     const m3_qwen_dimensions *dimensions, m3_error *error)
 {
     m3_runtime_tensor_spec specs[M3_QWEN_RESULT_COUNT];
-    uint64_t embedding[] = {dimensions->hidden_size};
     uint64_t hidden[] = {2U, dimensions->hidden_size};
     uint64_t eos[] = {2U, 1U};
     uint64_t semantic[] = {2U, dimensions->semantic_token_count};
 
-    m3_qwen_spec(&specs[M3_QWEN_RESULT_EMBEDDING], M3_DTYPE_BF16, 1U,
-                 embedding);
     m3_qwen_spec(&specs[M3_QWEN_RESULT_HIDDEN], M3_DTYPE_BF16, 2U,
                  hidden);
     m3_qwen_spec(&specs[M3_QWEN_RESULT_EOS_BF16], M3_DTYPE_BF16, 2U,
@@ -216,76 +212,124 @@ static m3_status m3_qwen_cancelled(m3_error *error)
                         "Qwen forward execution was cancelled");
 }
 
-static m3_status m3_qwen_forward_validate(
-    const m3_qwen_forward_state *state, m3_qwen_forward_kind kind,
-    const m3_tensor_view *ids, uint64_t *position, uint64_t *new_count,
-    m3_error *error)
+static m3_status m3_qwen_feedback_rows_equal(
+    const m3_tensor_view *feedback, m3_error *error)
 {
-    const int32_t *values;
-    const void *data = NULL;
-    uint64_t sequence;
-    size_t index;
-    m3_status status;
+    const void *raw = NULL;
+    const uint8_t *data;
+    size_t channel;
+    m3_status status = m3_tensor_const_data(feedback, &raw, error);
 
-    if (state == NULL || state->dimensions == NULL ||
-        state->weights == NULL || state->backend == NULL ||
-        state->executor == NULL || state->cache_views == NULL ||
-        state->cosines == NULL || state->sines == NULL || ids == NULL ||
-        position == NULL || new_count == NULL) {
-        return m3_error_set(error, M3_STATUS_INVALID_ARGUMENT,
-                            "Qwen forward state and inputs are required");
-    }
-    if (ids->metadata.dtype != M3_DTYPE_I32 ||
-        ids->metadata.rank != 2U || ids->metadata.shape[0] != 2U ||
-        ids->metadata.shape[1] == 0U ||
-        !m3_tensor_is_contiguous(ids) || ids->storage == NULL ||
-        m3_storage_backend(ids->storage) != state->backend) {
-        return m3_error_set(error, M3_STATUS_INVALID_ARGUMENT,
-                            "Qwen IDs must be contiguous I32 [2,T] on the "
-                            "runtime backend");
-    }
-    sequence = ids->metadata.shape[1];
-    status = m3_tensor_const_data(ids, &data, error);
     if (status != M3_STATUS_OK) {
         return status;
     }
-    if (data == NULL) {
+    if (raw == NULL) {
         return m3_error_set(error, M3_STATUS_UNSUPPORTED,
-                            "Qwen IDs are not host-readable");
+                            "Qwen feedback rows are not host-readable");
     }
-    values = data;
-    for (index = 0U; index < ids->metadata.element_count; ++index) {
-        if (values[index] < 0 ||
-            (uint64_t)values[index] >= state->dimensions->vocab_size) {
-            return m3_error_set(error, M3_STATUS_OUT_OF_RANGE,
-                                "Qwen token ID is outside the vocabulary");
+    data = raw;
+    for (channel = 0U;
+         channel < (size_t)feedback->metadata.shape[2]; ++channel) {
+        size_t first = channel * feedback->byte_strides[2];
+        size_t second = feedback->byte_strides[0] + first;
+
+        if (memcmp(data + first, data + second, sizeof(uint16_t)) != 0) {
+            return m3_error_set(
+                error, M3_STATUS_INVALID_ARGUMENT,
+                "Qwen feedback rows must be bit-identical");
         }
     }
+    return M3_STATUS_OK;
+}
+
+static m3_status m3_qwen_forward_validate(
+    const m3_qwen_forward_state *state, m3_qwen_forward_kind kind,
+    const m3_tensor_view *input, uint64_t *sequence, uint64_t *position,
+    uint64_t *new_count,
+    m3_error *error)
+{
+    if (state == NULL || state->dimensions == NULL ||
+        state->weights == NULL || state->backend == NULL ||
+        state->executor == NULL || state->cache_views == NULL ||
+        state->cosines == NULL || state->sines == NULL || input == NULL ||
+        sequence == NULL || position == NULL || new_count == NULL) {
+        return m3_error_set(error, M3_STATUS_INVALID_ARGUMENT,
+                            "Qwen forward state and inputs are required");
+    }
     if (kind == M3_QWEN_FORWARD_PREFILL) {
+        const int32_t *values;
+        const void *data = NULL;
+        size_t index;
+        m3_status status;
+
+        if (input->metadata.dtype != M3_DTYPE_I32 ||
+            input->metadata.rank != 2U ||
+            input->metadata.shape[0] != 2U ||
+            input->metadata.shape[1] == 0U ||
+            !m3_tensor_is_contiguous(input) || input->storage == NULL ||
+            m3_storage_backend(input->storage) != state->backend) {
+            return m3_error_set(
+                error, M3_STATUS_INVALID_ARGUMENT,
+                "Qwen IDs must be contiguous I32 [2,T] on the runtime backend");
+        }
         if (state->token_count != 0U) {
             return m3_error_set(error, M3_STATUS_INVALID_ARGUMENT,
                                 "Qwen prefill requires an empty cache state");
         }
+        status = m3_tensor_const_data(input, &data, error);
+        if (status != M3_STATUS_OK) {
+            return status;
+        }
+        if (data == NULL) {
+            return m3_error_set(error, M3_STATUS_UNSUPPORTED,
+                                "Qwen IDs are not host-readable");
+        }
+        values = data;
+        for (index = 0U; index < input->metadata.element_count; ++index) {
+            if (values[index] < 0 ||
+                (uint64_t)values[index] >=
+                    state->dimensions->vocab_size) {
+                return m3_error_set(
+                    error, M3_STATUS_OUT_OF_RANGE,
+                    "Qwen token ID is outside the vocabulary");
+            }
+        }
+        *sequence = input->metadata.shape[1];
         *position = 0U;
-    } else if (kind == M3_QWEN_FORWARD_STEP) {
-        if (state->token_count == 0U || sequence != 1U) {
-            return m3_error_set(error, M3_STATUS_INVALID_ARGUMENT,
-                                "Qwen step requires a prefilled state and one token");
+    } else if (kind == M3_QWEN_FORWARD_ADVANCE) {
+        m3_status status;
+
+        if (input->metadata.dtype != M3_DTYPE_BF16 ||
+            input->metadata.rank != 3U ||
+            input->metadata.shape[0] != 2U ||
+            input->metadata.shape[1] != 1U ||
+            input->metadata.shape[2] != state->dimensions->hidden_size ||
+            input->storage == NULL ||
+            m3_storage_backend(input->storage) != state->backend) {
+            return m3_error_set(
+                error, M3_STATUS_INVALID_ARGUMENT,
+                "Qwen feedback must be BF16 [2,1,H] on the runtime "
+                "backend");
         }
-        if (values[0] != values[1]) {
-            return m3_error_set(error, M3_STATUS_INVALID_ARGUMENT,
-                                "Qwen step token rows must be identical");
+        status = m3_qwen_feedback_rows_equal(input, error);
+        if (status != M3_STATUS_OK) {
+            return status;
         }
+        if (state->token_count == 0U) {
+            return m3_error_set(error, M3_STATUS_INVALID_ARGUMENT,
+                                "Qwen advance requires a prefilled state");
+        }
+        *sequence = 1U;
         *position = state->token_count;
     } else {
         return m3_error_set(error, M3_STATUS_INVALID_ARGUMENT,
                             "Qwen forward kind is invalid");
     }
-    if (sequence > UINT64_MAX - *position) {
+    if (*sequence > UINT64_MAX - *position) {
         return m3_error_set(error, M3_STATUS_OVERFLOW,
                             "Qwen published token count overflows");
     }
-    *new_count = *position + sequence;
+    *new_count = *position + *sequence;
     if (*new_count > state->cache_capacity) {
         return m3_error_set(error, M3_STATUS_OUT_OF_RANGE,
                             "Qwen forward exceeds cache capacity");
@@ -311,35 +355,6 @@ static void m3_qwen_layer_workspace_set(
     layer->gate = &activation->views[M3_QWEN_ACT_GATE];
     layer->up = &activation->views[M3_QWEN_ACT_UP];
     layer->down = &activation->views[M3_QWEN_ACT_DOWN];
-}
-
-static m3_status m3_qwen_capture_embedding(
-    m3_qwen_forward_kind kind, m3_command_executor *executor,
-    m3_runtime_workspace *activation, m3_runtime_workspace *result,
-    m3_error *error)
-{
-    m3_tensor_view row;
-    m3_tensor_view vector;
-    uint64_t shape[] = {
-        activation->views[M3_QWEN_ACT_HIDDEN].metadata.shape[2]};
-    m3_status status;
-
-    if (kind != M3_QWEN_FORWARD_STEP) {
-        return M3_STATUS_OK;
-    }
-    m3_tensor_view_init(&row);
-    m3_tensor_view_init(&vector);
-    status = m3_tensor_slice(&activation->views[M3_QWEN_ACT_HIDDEN], 0U,
-                             0U, 1U, &row, error);
-    if (status == M3_STATUS_OK) {
-        status = m3_tensor_reshape(&row, 1U, shape, &vector, error);
-    }
-    if (status == M3_STATUS_OK) {
-        status = m3_qwen_forward_copy(
-            executor, &vector, &result->views[M3_QWEN_RESULT_EMBEDDING],
-            error);
-    }
-    return status;
 }
 
 static m3_status m3_qwen_final_hidden(
@@ -447,7 +462,7 @@ void m3_qwen_forward_state_dispose(m3_qwen_forward_state *state)
 
 m3_status m3_qwen_forward_execute(m3_qwen_forward_state *state,
                                   m3_qwen_forward_kind kind,
-                                  const m3_tensor_view *ids,
+                                  const m3_tensor_view *input,
                                   m3_progress_callback progress,
                                   void *progress_context,
                                   m3_qwen_forward_result *result,
@@ -457,6 +472,7 @@ m3_status m3_qwen_forward_execute(m3_qwen_forward_state *state,
     m3_runtime_workspace built_result;
     m3_qwen_layer_workspace layer_workspace;
     m3_tensor_view last_hidden;
+    uint64_t sequence = 0U;
     uint64_t position = 0U;
     uint64_t new_count = 0U;
     uint64_t total;
@@ -467,8 +483,8 @@ m3_status m3_qwen_forward_execute(m3_qwen_forward_state *state,
         return m3_error_set(error, M3_STATUS_INVALID_ARGUMENT,
                             "Qwen forward result is null");
     }
-    status = m3_qwen_forward_validate(state, kind, ids, &position,
-                                      &new_count, error);
+    status = m3_qwen_forward_validate(state, kind, input, &sequence,
+                                      &position, &new_count, error);
     if (status != M3_STATUS_OK) {
         return status;
     }
@@ -480,19 +496,19 @@ m3_status m3_qwen_forward_execute(m3_qwen_forward_state *state,
     m3_runtime_workspace_init(&built_result);
     status = m3_qwen_activation_build(
         &activation, state->backend, state->dimensions,
-        ids->metadata.shape[1], error);
+        sequence, error);
     if (status == M3_STATUS_OK) {
         status = m3_qwen_result_build(&built_result, state->backend,
                                       state->dimensions, error);
     }
-    if (status == M3_STATUS_OK) {
+    if (status == M3_STATUS_OK && kind == M3_QWEN_FORWARD_PREFILL) {
         status = m3_qwen_embedding(
-            state->executor, ids, state->weights->embedding,
+            state->executor, input, state->weights->embedding,
             &activation.views[M3_QWEN_ACT_HIDDEN], error);
-    }
-    if (status == M3_STATUS_OK) {
-        status = m3_qwen_capture_embedding(
-            kind, state->executor, &activation, &built_result, error);
+    } else if (status == M3_STATUS_OK) {
+        status = m3_qwen_forward_copy(
+            state->executor, input,
+            &activation.views[M3_QWEN_ACT_HIDDEN], error);
     }
     if (status == M3_STATUS_OK &&
         !m3_qwen_progress(progress, progress_context, 1U, total)) {
@@ -538,12 +554,7 @@ m3_status m3_qwen_forward_execute(m3_qwen_forward_state *state,
     m3_runtime_workspace_dispose(&state->published);
     state->published = built_result;
     state->token_count = new_count;
-    result->token_embedding = kind == M3_QWEN_FORWARD_STEP
-        ? &state->published.views[M3_QWEN_RESULT_EMBEDDING]
-        : NULL;
-    result->hidden = kind == M3_QWEN_FORWARD_STEP
-        ? &state->published.views[M3_QWEN_RESULT_HIDDEN]
-        : NULL;
+    result->hidden = &state->published.views[M3_QWEN_RESULT_HIDDEN];
     result->eos_logits =
         &state->published.views[M3_QWEN_RESULT_EOS_F32];
     result->semantic_logits =

@@ -133,8 +133,8 @@ void m3_test_qwen_runtime_api_validation(m3_test_context *test)
     m3_backend *backend = NULL;
     m3_weight_stage stage;
     m3_qwen_runtime *runtime = (m3_qwen_runtime *)(uintptr_t)1U;
-    m3_qwen_logits logits;
-    m3_qwen_step_result step;
+    m3_qwen_state state;
+    m3_tensor_view embedding;
     m3_error error;
 
     m3_weight_stage_init(&stage);
@@ -161,12 +161,14 @@ void m3_test_qwen_runtime_api_validation(m3_test_context *test)
                    "reject a stage without exact official weights before "
                    "cache allocation");
     M3_TEST_EXPECT(test,
-                   m3_qwen_runtime_prefill(NULL, NULL, NULL, NULL, &logits,
+                   m3_qwen_runtime_prefill(NULL, NULL, NULL, NULL, &state,
                                            NULL) ==
                            M3_STATUS_INVALID_ARGUMENT &&
-                       m3_qwen_runtime_step(NULL,
-                                            M3_QWEN_SEMANTIC_TOKEN_START,
-                                            NULL, NULL, &step, NULL) ==
+                       m3_qwen_runtime_semantic_embedding(
+                           NULL, 0U, &embedding, NULL) ==
+                           M3_STATUS_INVALID_ARGUMENT &&
+                       m3_qwen_runtime_advance(
+                           NULL, NULL, NULL, NULL, &state, NULL) ==
                            M3_STATUS_INVALID_ARGUMENT &&
                        m3_qwen_runtime_token_count(NULL) == 0U &&
                        m3_qwen_runtime_cache_capacity(NULL) == 0U &&

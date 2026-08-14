@@ -90,6 +90,11 @@ m3_status m3_rvq_decode_frame_core(
     const m3_tensor_view *semantic_embedding, const float *uniforms,
     size_t uniform_count, m3_progress_callback progress,
     void *progress_context, m3_rvq_frame *frame, m3_error *error);
+m3_status m3_rvq_feedback_build_core(
+    m3_backend *backend, const m3_rvq_config *config,
+    const m3_rvq_weights *weights,
+    const m3_tensor_view *semantic_embedding, const m3_rvq_frame *frame,
+    m3_rvq_feedback *feedback, m3_error *error);
 
 size_t m3_rvq_sequence_length(size_t head_index);
 bool m3_rvq_next_embedding_id(size_t head_index, uint32_t code,

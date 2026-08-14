@@ -238,6 +238,14 @@ bool m3_qwen_test_ids(m3_qwen_test_fixture *fixture,
                              shape, values);
 }
 
+bool m3_qwen_test_feedback(m3_qwen_test_fixture *fixture,
+                           m3_tensor_view *view, const float *values)
+{
+    const uint64_t shape[] = {2U, 1U, fixture->dimensions.hidden_size};
+
+    return m3_qwen_test_bf16(fixture, view, 3U, shape, values);
+}
+
 uint16_t m3_qwen_test_bf16_at(const m3_tensor_view *view, size_t index)
 {
     const uint8_t *data = m3_storage_const_data(view->storage);
