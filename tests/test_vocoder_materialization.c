@@ -143,6 +143,16 @@ void test_vocoder_host_materialization(m3_test_context *test)
                              runtime->weights.count == fixture.plan.entry_count,
                    "runtime owns exact same-backend destination tensors");
     M3_TEST_EXPECT(test,
+                   runtime->config.latent_channels == 4U &&
+                       runtime->config.maximum_latent_length == 8U &&
+                       runtime->config.decoder_input_channels == 2U &&
+                       runtime->config.decoder_output_channels == 3U &&
+                       runtime->config.initial_channels == 4U &&
+                       runtime->config.block_count == 1U &&
+                       runtime->config.residual_count == 1U &&
+                       runtime->config.strides[0] == 2U,
+                   "materialized runtime retains the complete reduced config");
+    M3_TEST_EXPECT(test,
                    runtime != NULL &&
                        runtime->weights.allocated_bytes ==
                            m3_vocoder_test_runtime_bytes(&fixture),

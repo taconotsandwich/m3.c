@@ -556,6 +556,7 @@ m3_status m3_vocoder_runtime_create_core(
                             "cannot allocate vocoder runtime state");
     }
     built->backend = vocoder->backend;
+    built->config = plan->config;
     m3_runtime_workspace_init(&built->weights);
     (void)memset(&build, 0, sizeof(build));
     build.plan = plan;

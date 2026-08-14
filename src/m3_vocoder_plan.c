@@ -45,6 +45,8 @@ void m3_vocoder_plan_official_config(m3_vocoder_plan_config *config)
         return;
     }
     (void)memset(config, 0, sizeof(*config));
+    config->latent_channels = 128U;
+    config->maximum_latent_length = M3_VOCODER_MAXIMUM_LATENT_LENGTH;
     config->decoder_input_channels = 64U;
     config->decoder_output_channels = 1024U;
     config->initial_channels = 1536U;
@@ -239,19 +241,30 @@ static m3_status m3_vocoder_add_block(
     return status;
 }
 
-static m3_status m3_vocoder_plan_validate(
+m3_status m3_vocoder_plan_config_validate(
     const m3_vocoder_plan_config *config, m3_error *error)
 {
     uint64_t channels;
     size_t block;
 
-    if (config == NULL || config->decoder_input_channels == 0U ||
+    if (config == NULL || config->latent_channels == 0U ||
+        config->maximum_latent_length == 0U ||
+        config->decoder_input_channels == 0U ||
         config->decoder_output_channels == 0U ||
         config->initial_channels == 0U ||
         config->block_count > M3_VOCODER_BLOCK_COUNT ||
         config->residual_count > M3_VOCODER_RESIDUAL_COUNT) {
         return m3_error_set(error, M3_STATUS_INVALID_ARGUMENT,
                             "vocoder plan configuration is invalid");
+    }
+    if (config->decoder_input_channels > UINT64_MAX / 2U) {
+        return m3_error_set(error, M3_STATUS_OVERFLOW,
+                            "vocoder latent channel count overflows");
+    }
+    if (config->latent_channels !=
+        config->decoder_input_channels * 2U) {
+        return m3_error_set(error, M3_STATUS_INVALID_ARGUMENT,
+                            "vocoder folded channel configuration is invalid");
     }
     channels = config->initial_channels;
     for (block = 0U; block < config->block_count; ++block) {
@@ -282,7 +295,7 @@ m3_status m3_vocoder_plan_build(
         return m3_error_set(error, M3_STATUS_INVALID_ARGUMENT,
                             "vocoder plan output is null");
     }
-    status = m3_vocoder_plan_validate(config, error);
+    status = m3_vocoder_plan_config_validate(config, error);
     if (status != M3_STATUS_OK) {
         return status;
     }
@@ -293,6 +306,7 @@ m3_status m3_vocoder_plan_build(
         (4U + 8U * config->residual_count);
     built.block_count = config->block_count;
     built.residual_count = config->residual_count;
+    built.config = *config;
     built.entries = calloc(built.entry_count, sizeof(*built.entries));
     if (built.entries == NULL) {
         return m3_error_set(error, M3_STATUS_OUT_OF_MEMORY,

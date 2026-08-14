@@ -24,3 +24,17 @@ M3_TEST_CASE(test_vocoder_stage_lifetime_independence,
              "vocoder staged-weight lifetime independence")
 M3_TEST_CASE(test_vocoder_real_metal_ownership,
              "vocoder real Metal destination ownership")
+M3_TEST_CASE(test_vocoder_decode_plan_oracles,
+             "vocoder decoder production memory plan")
+M3_TEST_CASE(test_vocoder_decode_host_oracle,
+             "vocoder decoder reduced host oracle")
+M3_TEST_CASE(test_vocoder_decode_atomic_cancel,
+             "vocoder decoder atomic cancellation")
+M3_TEST_CASE(test_vocoder_decode_preflight_limits,
+             "vocoder decoder preflight limits")
+M3_TEST_CASE(test_vocoder_decode_rejects_malformed_input,
+             "vocoder decoder malformed input allocation atomicity")
+M3_TEST_CASE(test_metal_vocoder_decode_chunk,
+             "vocoder decoder real Metal integration")
+M3_TEST_CASE(test_vocoder_decode_rejects_partial_topology,
+             "vocoder decoder rejects partial topology")

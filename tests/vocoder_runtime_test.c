@@ -33,6 +33,8 @@ static char *m3_vocoder_test_copy_name(const char *name)
 void m3_vocoder_test_config(m3_vocoder_plan_config *config)
 {
     (void)memset(config, 0, sizeof(*config));
+    config->latent_channels = 4U;
+    config->maximum_latent_length = 8U;
     config->decoder_input_channels = 2U;
     config->decoder_output_channels = 3U;
     config->initial_channels = 4U;
@@ -139,16 +141,16 @@ static bool m3_vocoder_test_allocate_source(
     return status == M3_STATUS_OK;
 }
 
-bool m3_vocoder_test_fixture_create(
+bool m3_vocoder_test_fixture_create_config(
     m3_vocoder_test_fixture *fixture, m3_backend *backend,
-    bool owns_backend, m3_error *error)
+    bool owns_backend, const m3_vocoder_plan_config *config,
+    m3_error *error)
 {
     m3_vocoder_test_source_spec *sources = NULL;
-    m3_vocoder_plan_config config;
     size_t index;
     m3_status status;
 
-    if (fixture == NULL || backend == NULL) {
+    if (fixture == NULL || backend == NULL || config == NULL) {
         return false;
     }
     (void)memset(fixture, 0, sizeof(*fixture));
@@ -157,8 +159,7 @@ bool m3_vocoder_test_fixture_create(
     m3_weight_stage_init(&fixture->stage);
     fixture->backend = backend;
     fixture->owns_backend = owns_backend;
-    m3_vocoder_test_config(&config);
-    status = m3_vocoder_plan_build(&config, &fixture->plan, error);
+    status = m3_vocoder_plan_build(config, &fixture->plan, error);
     if (status != M3_STATUS_OK) {
         m3_vocoder_test_fixture_dispose(fixture);
         return false;
@@ -196,6 +197,17 @@ bool m3_vocoder_test_fixture_create(
     }
     free(sources);
     return true;
+}
+
+bool m3_vocoder_test_fixture_create(
+    m3_vocoder_test_fixture *fixture, m3_backend *backend,
+    bool owns_backend, m3_error *error)
+{
+    m3_vocoder_plan_config config;
+
+    m3_vocoder_test_config(&config);
+    return m3_vocoder_test_fixture_create_config(
+        fixture, backend, owns_backend, &config, error);
 }
 
 void m3_vocoder_test_fixture_dispose(m3_vocoder_test_fixture *fixture)
