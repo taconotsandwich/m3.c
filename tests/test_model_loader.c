@@ -236,9 +236,12 @@ void m3_test_safetensors_header(m3_test_context *test)
         "\"data_offsets\":[8,10]},"
         "\"bf16\":{\"dtype\":\"BF16\",\"shape\":[1,2],"
         "\"data_offsets\":[10,14]}}   ";
-    char root[M3_TEST_PATH_CAPACITY];
+    char root[M3_TEST_PATH_CAPACITY] = {0};
     char path[M3_TEST_PATH_CAPACITY];
+    char invalid_path[M3_TEST_PATH_CAPACITY];
     m3_safetensors_metadata metadata;
+    m3_file_snapshot snapshot;
+    m3_safetensors_tensor *owned_tensors;
     m3_error error;
     bool ready = m3_loader_test_make_root(root) &&
                  m3_loader_test_path(path, root, "weights.safetensors") &&
@@ -263,11 +266,32 @@ void m3_test_safetensors_header(m3_test_context *test)
                    metadata.data_section_offset ==
                        8U + (uint64_t)strlen(header),
                    "retain absolute Safetensors data-section offset");
+    M3_TEST_EXPECT(
+        test,
+        metadata.source_snapshot.regular_file &&
+            metadata.source_snapshot.file_size ==
+                metadata.data_section_offset + 14U,
+        "retain normalized source identity and exact file size");
     M3_TEST_EXPECT(test,
                    metadata.tensors[0].tensor.dtype == M3_DTYPE_F32 &&
                        metadata.tensors[1].tensor.dtype == M3_DTYPE_F16 &&
                        metadata.tensors[2].tensor.dtype == M3_DTYPE_BF16,
                    "retain sorted tensor metadata");
+    snapshot = metadata.source_snapshot;
+    owned_tensors = metadata.tensors;
+    M3_TEST_EXPECT(
+        test,
+        m3_loader_test_path(invalid_path, root, "invalid.safetensors") &&
+            m3_loader_test_write_safetensors(
+                invalid_path,
+                "{\"x\":{\"dtype\":\"I64\",\"shape\":[1],"
+                "\"data_offsets\":[0,8]}}",
+                8U) &&
+            m3_safetensors_inspect_file(invalid_path, &metadata, &error) ==
+                M3_STATUS_UNSUPPORTED &&
+            metadata.tensors == owned_tensors && metadata.tensor_count == 3U &&
+            m3_file_snapshot_equal(&metadata.source_snapshot, &snapshot),
+        "failed inspection preserves prior owned metadata atomically");
     m3_safetensors_metadata_dispose(&metadata);
     M3_TEST_EXPECT(test, m3_loader_test_remove_tree(root),
                    "remove Safetensors fixture");

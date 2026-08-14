@@ -4,6 +4,7 @@
 #define M3_SAFETENSORS_H
 
 #include "m3_error.h"
+#include "m3_file.h"
 #include "m3_tensor.h"
 
 #include <stdbool.h>
@@ -24,6 +25,7 @@ typedef struct {
     size_t tensor_count;
     size_t tensor_bytes;
     uint64_t data_section_offset;
+    m3_file_snapshot source_snapshot;
     bool has_metadata;
 } m3_safetensors_metadata;
 
