@@ -2,10 +2,25 @@
 
 #include "test_cases.h"
 
+#include "m3_backend_metal_helpers.h"
 #include "m3_op_test.h"
 
 #include <stdint.h>
 #include <string.h>
+
+static bool m3_test_metal_view_tail_is_zero(
+    const m3_metal_view_parameters *parameters)
+{
+    size_t axis;
+
+    for (axis = parameters->rank; axis < M3_TENSOR_MAX_RANK; ++axis) {
+        if (parameters->shape[axis] != 0U ||
+            parameters->byte_strides[axis] != 0U) {
+            return false;
+        }
+    }
+    return true;
+}
 
 static bool m3_test_metal_fixture_init(m3_test_context *test,
                                        m3_op_test_fixture *fixture)
@@ -29,9 +44,12 @@ static bool m3_test_metal_strided_copy(m3_test_context *test,
 {
     const uint64_t shape[] = {3U};
     const size_t strides[] = {2U * sizeof(float)};
-    const float padded[] = {1.25F, 91.0F, -2.5F, 92.0F, 3.75F, 93.0F};
+    const float padded[] = {
+        90.0F, 1.25F, 91.0F, -2.5F, 92.0F, 3.75F, 93.0F
+    };
     const float zeros[] = {0.0F, 0.0F, 0.0F};
     m3_storage *input_storage = NULL;
+    m3_metal_view_parameters parameters;
     m3_tensor_view input;
     m3_tensor_view output;
     m3_command command;
@@ -48,13 +66,23 @@ static bool m3_test_metal_strided_copy(m3_test_context *test,
                            M3_STATUS_OK &&
                        m3_tensor_view_strided(
                            &input, input_storage, M3_DTYPE_F32, 1U, shape,
-                           strides, 0U, &error) == M3_STATUS_OK &&
+                           strides, sizeof(float), &error) == M3_STATUS_OK &&
                        m3_op_test_tensor(fixture, &output, M3_DTYPE_F32, 1U,
                                          shape, zeros),
                    "create strided Metal COPY tensors");
     if (input.storage == NULL || output.storage == NULL) {
         return false;
     }
+    m3_metal_view_parameters_init(&parameters, &input);
+    M3_TEST_EXPECT(
+        test,
+        parameters.element_count == 3U &&
+            parameters.byte_offset == sizeof(float) &&
+            parameters.shape[0] == 3U &&
+            parameters.byte_strides[0] == 2U * sizeof(float) &&
+            parameters.rank == 1U && parameters.dtype == M3_DTYPE_F32 &&
+            m3_test_metal_view_tail_is_zero(&parameters),
+        "initialize the shared Metal view parameter ABI");
     command.kind = M3_OP_COPY;
     command.descriptor.copy.input = &input;
     command.descriptor.copy.output = &output;
@@ -113,6 +141,14 @@ static bool m3_test_metal_multi_command(m3_test_context *test,
     commands[1].kind = M3_OP_CAST;
     commands[1].descriptor.cast.input = &middle;
     commands[1].descriptor.cast.output = &output;
+    M3_TEST_EXPECT(
+        test,
+        !m3_metal_has_prior_writer(commands, 0U, middle.storage) &&
+            m3_metal_has_prior_writer(commands, 1U, middle.storage) &&
+            !m3_metal_has_prior_writer(commands, 1U, output.storage) &&
+            m3_metal_has_prior_writer(commands, 2U, output.storage) &&
+            !m3_metal_has_prior_writer(commands, 2U, NULL),
+        "scan prior Metal writers through the family registry");
     M3_TEST_EXPECT(test,
                    m3_backend_execute(fixture->backend, commands, 2U, NULL,
                                       &error) == M3_STATUS_OK,
