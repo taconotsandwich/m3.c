@@ -83,13 +83,28 @@ static void m3_metal_free(void *context, void *handle, void *data)
     }
 }
 
+static m3_status m3_metal_execute(void *context,
+                                  const m3_command *commands,
+                                  size_t command_count,
+                                  m3_scratch_arena *scratch,
+                                  m3_error *error)
+{
+    (void)context;
+    (void)commands;
+    (void)command_count;
+    (void)scratch;
+    return m3_error_set(error, M3_STATUS_UNSUPPORTED,
+                        "Metal operation execution is not implemented");
+}
+
 static m3_status m3_backend_create_metal_in_pool(m3_backend **backend,
                                                  m3_error *error)
 {
     static const m3_backend_vtable vtable = {
         m3_metal_destroy,
         m3_metal_allocate,
-        m3_metal_free
+        m3_metal_free,
+        m3_metal_execute
     };
     id<MTLDevice> device;
     id<MTLCommandQueue> command_queue;
