@@ -19,6 +19,10 @@ void m3_vocoder_test_config(m3_vocoder_plan_config *config);
 bool m3_vocoder_test_fixture_create(
     m3_vocoder_test_fixture *fixture, m3_backend *backend,
     bool owns_backend, m3_error *error);
+bool m3_vocoder_test_fixture_create_config(
+    m3_vocoder_test_fixture *fixture, m3_backend *backend,
+    bool owns_backend, const m3_vocoder_plan_config *config,
+    m3_error *error);
 void m3_vocoder_test_fixture_dispose(m3_vocoder_test_fixture *fixture);
 m3_tensor_view *m3_vocoder_test_source(
     m3_vocoder_test_fixture *fixture, const char *name);

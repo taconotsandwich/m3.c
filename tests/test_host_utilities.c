@@ -1,30 +1,11 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 
 #include "m3_rng.h"
-#include "m3_wav.h"
 #include "test_cases.h"
 
 #include <math.h>
 #include <stdint.h>
-#include <stdio.h>
 #include <string.h>
-
-static bool m3_test_read_exact_file(const char *path, uint8_t *data,
-                                    size_t size)
-{
-    FILE *stream = fopen(path, "rb");
-    bool success;
-
-    if (stream == NULL) {
-        return false;
-    }
-    success = fread(data, 1U, size, stream) == size &&
-              fgetc(stream) == EOF && ferror(stream) == 0;
-    if (fclose(stream) != 0) {
-        success = false;
-    }
-    return success;
-}
 
 void m3_test_rng_contract(m3_test_context *test)
 {
@@ -140,94 +121,4 @@ void m3_test_rng_contract(m3_test_context *test)
                    m3_rng_normal_f32_fill(&rng, NULL, 0U, &error) ==
                        M3_STATUS_OK,
                    "allow empty normal output");
-}
-
-void m3_test_wav_contract(m3_test_context *test)
-{
-    static const uint8_t expected[] = {
-        0x52U, 0x49U, 0x46U, 0x46U, 0x2cU, 0x00U, 0x00U, 0x00U,
-        0x57U, 0x41U, 0x56U, 0x45U, 0x66U, 0x6dU, 0x74U, 0x20U,
-        0x10U, 0x00U, 0x00U, 0x00U, 0x03U, 0x00U, 0x02U, 0x00U,
-        0x40U, 0x1fU, 0x00U, 0x00U, 0x00U, 0xfaU, 0x00U, 0x00U,
-        0x08U, 0x00U, 0x20U, 0x00U, 0x64U, 0x61U, 0x74U, 0x61U,
-        0x08U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x80U, 0x3fU,
-        0x00U, 0x00U, 0x00U, 0xbfU
-    };
-    static const m3_test_fixture empty_fixture = {
-        "empty WAVE destination", NULL, 0U
-    };
-    const float samples[] = {1.0F, -0.5F};
-    uint8_t actual[sizeof(expected)] = {0U};
-    m3_test_temp_file file = {{0}};
-    m3_error error = {M3_STATUS_INTERNAL, "stale"};
-    char invalid_path[M3_TEST_TEMP_PATH_CAPACITY + 16U] = {0};
-    int path_result;
-
-    M3_TEST_EXPECT(test, m3_test_temp_file_create(&file, &empty_fixture),
-                   "create WAVE destination");
-    M3_TEST_EXPECT(test,
-                   m3_wav_write_f32(file.path, samples, 8000U, 2U, 1U,
-                                    &error) == M3_STATUS_OK,
-                   "write tiny float32 WAVE");
-    M3_TEST_EXPECT(test, error.status == M3_STATUS_OK,
-                   "successful WAVE write clears error");
-    M3_TEST_EXPECT(test,
-                   m3_test_read_exact_file(file.path, actual, sizeof(actual)),
-                   "read exact tiny WAVE size");
-    M3_TEST_EXPECT(test, memcmp(actual, expected, sizeof(expected)) == 0,
-                   "tiny WAVE bytes match canonical little-endian output");
-
-    M3_TEST_EXPECT(test,
-                   m3_wav_write_f32(NULL, samples, 8000U, 2U, 1U, &error) ==
-                       M3_STATUS_INVALID_ARGUMENT,
-                   "reject null WAVE path");
-    M3_TEST_EXPECT(test,
-                   m3_wav_write_f32("", samples, 8000U, 2U, 1U, &error) ==
-                       M3_STATUS_INVALID_ARGUMENT,
-                   "reject empty WAVE path");
-    M3_TEST_EXPECT(test,
-                   m3_wav_write_f32(file.path, NULL, 8000U, 2U, 1U,
-                                    &error) == M3_STATUS_INVALID_ARGUMENT,
-                   "reject null non-empty WAVE samples");
-    M3_TEST_EXPECT(test,
-                   m3_wav_write_f32(file.path, samples, 0U, 2U, 1U, &error) ==
-                       M3_STATUS_OUT_OF_RANGE,
-                   "reject zero WAVE sample rate");
-    M3_TEST_EXPECT(test,
-                   m3_wav_write_f32(file.path, samples, 8000U, 0U, 1U,
-                                    &error) == M3_STATUS_OUT_OF_RANGE,
-                   "reject zero WAVE channels");
-    M3_TEST_EXPECT(test,
-                   m3_wav_write_f32(file.path, samples, 8000U, UINT16_MAX,
-                                    0U, &error) == M3_STATUS_OVERFLOW,
-                   "reject overflowing WAVE block alignment");
-    M3_TEST_EXPECT(test,
-                   m3_wav_write_f32(file.path, samples, UINT32_MAX, 1U, 0U,
-                                    &error) == M3_STATUS_OVERFLOW,
-                   "reject overflowing WAVE byte rate");
-    M3_TEST_EXPECT(test,
-                   m3_wav_write_f32(file.path, samples, 8000U, 2U,
-                                    UINT64_MAX, &error) ==
-                       M3_STATUS_OVERFLOW,
-                   "reject overflowing WAVE sample count");
-    M3_TEST_EXPECT(test,
-                   m3_wav_write_f32(file.path, samples, 8000U, 1U,
-                                    (uint64_t)(UINT32_MAX - 36U) / 4U + 1U,
-                                    &error) == M3_STATUS_OVERFLOW,
-                   "reject WAVE data beyond RIFF limit");
-
-    path_result = snprintf(invalid_path, sizeof(invalid_path), "%s/child.wav",
-                           file.path);
-    M3_TEST_EXPECT(test,
-                   path_result > 0 && (size_t)path_result < sizeof(invalid_path),
-                   "construct deterministic invalid WAVE path");
-    M3_TEST_EXPECT(test,
-                   m3_wav_write_f32(invalid_path, samples, 8000U, 2U, 1U,
-                                    &error) == M3_STATUS_IO,
-                   "propagate WAVE open failure");
-    M3_TEST_EXPECT(test, error.status == M3_STATUS_IO &&
-                             m3_error_message(&error)[0] != '\0',
-                   "WAVE I/O failure records structured error");
-    M3_TEST_EXPECT(test, m3_test_temp_file_remove(&file),
-                   "remove WAVE destination");
 }

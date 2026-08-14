@@ -13,6 +13,9 @@
 #define M3_VOCODER_RUNTIME_WEIGHT_COUNT 91U
 #define M3_VOCODER_BLOCK_COUNT 4U
 #define M3_VOCODER_RESIDUAL_COUNT 3U
+#define M3_VOCODER_DECODE_OPERATION_COUNT 73U
+#define M3_VOCODER_MAXIMUM_LATENT_LENGTH 689U
+#define M3_VOCODER_DECODE_BUFFER_COUNT 3U
 #define M3_VOCODER_MAXIMUM_ROW_BYTES 49152U
 #define M3_VOCODER_NAME_CAPACITY 128U
 
@@ -22,6 +25,8 @@ typedef enum {
 } m3_vocoder_material_kind;
 
 typedef struct {
+    uint64_t latent_channels;
+    uint64_t maximum_latent_length;
     uint64_t decoder_input_channels;
     uint64_t decoder_output_channels;
     uint64_t initial_channels;
@@ -44,7 +49,15 @@ typedef struct {
     size_t source_count;
     size_t block_count;
     size_t residual_count;
+    m3_vocoder_plan_config config;
 } m3_vocoder_plan;
+
+typedef struct {
+    size_t buffer_bytes[M3_VOCODER_DECODE_BUFFER_COUNT];
+    size_t workspace_bytes;
+    size_t output_bytes;
+    uint64_t output_length;
+} m3_vocoder_decode_measurement;
 
 typedef struct {
     const m3_tensor_view *snake1_alpha;
@@ -92,11 +105,14 @@ struct m3_vocoder_runtime {
     m3_backend *backend;
     m3_runtime_workspace weights;
     m3_vocoder_weights bound;
+    m3_vocoder_plan_config config;
 };
 
 void m3_vocoder_plan_init(m3_vocoder_plan *plan);
 void m3_vocoder_plan_dispose(m3_vocoder_plan *plan);
 void m3_vocoder_plan_official_config(m3_vocoder_plan_config *config);
+m3_status m3_vocoder_plan_config_validate(
+    const m3_vocoder_plan_config *config, m3_error *error);
 m3_status m3_vocoder_plan_build(
     const m3_vocoder_plan_config *config, m3_vocoder_plan *plan,
     m3_error *error);
@@ -113,5 +129,12 @@ m3_status m3_vocoder_runtime_bind(
     m3_error *error);
 const m3_vocoder_weights *m3_vocoder_runtime_weights(
     const m3_vocoder_runtime *runtime);
+m3_status m3_vocoder_decode_measure(
+    const m3_vocoder_plan_config *config, uint64_t latent_length,
+    m3_vocoder_decode_measurement *measurement, m3_error *error);
+m3_status m3_vocoder_decode_prepare(
+    m3_vocoder_runtime *runtime, const m3_tensor_view *latents,
+    m3_vocoder_output *output,
+    m3_vocoder_decode_measurement *measurement, m3_error *error);
 
 #endif

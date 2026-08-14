@@ -15,6 +15,7 @@ int main(void)
 #include "cases/metal_runtime.inc"
 #include "cases/prompt_tokenizer.inc"
 #include "cases/host_utilities.inc"
+#include "cases/wav_output.inc"
 #include "cases/runtime_workspace.inc"
 #include "cases/guided_sampling.inc"
 #include "cases/transformer_precision.inc"

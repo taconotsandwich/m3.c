@@ -23,7 +23,9 @@ m3_status m3_vocoder_runtime_bind(
     size_t block;
 
     if (plan == NULL || plan->block_count > M3_VOCODER_BLOCK_COUNT ||
-        plan->residual_count > M3_VOCODER_RESIDUAL_COUNT) {
+        plan->residual_count > M3_VOCODER_RESIDUAL_COUNT ||
+        plan->block_count != plan->config.block_count ||
+        plan->residual_count != plan->config.residual_count) {
         return m3_error_set(error, M3_STATUS_INVALID_ARGUMENT,
                             "vocoder runtime binding contract is invalid");
     }

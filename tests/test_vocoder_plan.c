@@ -95,6 +95,18 @@ void test_vocoder_official_plan(m3_test_context *test)
     M3_TEST_EXPECT(test,
                    plan.source_count == M3_VOCODER_SOURCE_WEIGHT_COUNT,
                    "official plan consumes 121 tensors");
+    M3_TEST_EXPECT(test,
+                   plan.config.latent_channels == 128U &&
+                       plan.config.maximum_latent_length == 689U &&
+                       plan.config.decoder_input_channels == 64U &&
+                       plan.config.block_count == M3_VOCODER_BLOCK_COUNT &&
+                       plan.config.residual_count ==
+                           M3_VOCODER_RESIDUAL_COUNT &&
+                       plan.config.strides[0] == 8U &&
+                       plan.config.strides[1] == 8U &&
+                       plan.config.strides[2] == 4U &&
+                       plan.config.strides[3] == 2U,
+                   "official plan retains its complete decoder config");
     (void)memset(&visit, 0, sizeof(visit));
     visit.test = test;
     visit.plan = &plan;
