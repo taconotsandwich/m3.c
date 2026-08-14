@@ -4,6 +4,7 @@
 #define M3_BACKEND_METAL_INTERNAL_H
 
 #include "m3_backend_internal.h"
+#include "m3_backend_metal_helpers.h"
 
 #import <Foundation/Foundation.h>
 #import <Metal/Metal.h>
@@ -47,8 +48,10 @@ m3_status m3_metal_register_pipeline(m3_metal_context *context,
                                       m3_error *error);
 id<MTLComputePipelineState> m3_metal_find_pipeline(
     const m3_metal_context *context, const char *name);
-bool m3_metal_command_writes_storage(const m3_command *command,
-                                      const m3_storage *storage);
+m3_status m3_metal_dispatch_1d(
+    id<MTLComputeCommandEncoder> encoder,
+    id<MTLComputePipelineState> pipeline, size_t work_count,
+    m3_error *error);
 
 NSString *m3_metal_source_basic(void);
 m3_status m3_metal_prepare_basic(m3_metal_context *context,
