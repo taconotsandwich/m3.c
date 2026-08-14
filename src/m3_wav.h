@@ -4,11 +4,10 @@
 #define M3_WAV_H
 
 #include "m3_error.h"
+#include "m3_tensor.h"
 
-#include <stdint.h>
-
-m3_status m3_wav_write_f32(const char *path, const float *samples,
-                           uint32_t sample_rate, uint16_t channel_count,
-                           uint64_t frame_count, m3_error *error);
+m3_status m3_wav_write_f32(const char *path,
+                           const m3_tensor_view *samples,
+                           m3_error *error);
 
 #endif
