@@ -381,8 +381,17 @@ static m3_status m3_rvq_layer(m3_rvq_run *run,
     commands[13].descriptor.add = (m3_op_binary){
         &views->hidden, &views->hidden_temp, &views->hidden
     };
-    return m3_command_executor_execute(&run->executor, commands, 14U,
-                                       error);
+    status = m3_command_executor_execute(&run->executor, commands, 4U,
+                                         error);
+    if (status == M3_STATUS_OK) {
+        status = m3_command_executor_execute(&run->executor,
+                                             &commands[4], 1U, error);
+    }
+    if (status == M3_STATUS_OK) {
+        status = m3_command_executor_execute(&run->executor,
+                                             &commands[5], 9U, error);
+    }
+    return status;
 }
 
 static m3_status m3_rvq_finish_step(
