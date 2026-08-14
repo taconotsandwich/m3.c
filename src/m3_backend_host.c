@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 
 #include "m3_backend_internal.h"
+#include "m3_op_internal.h"
 
 #include <stdint.h>
 #include <stdlib.h>
@@ -60,7 +61,8 @@ m3_status m3_backend_create_host(m3_backend **backend, m3_error *error)
     static const m3_backend_vtable vtable = {
         m3_host_destroy,
         m3_host_allocate,
-        m3_host_free
+        m3_host_free,
+        m3_host_execute_commands
     };
     m3_backend_info info;
     m3_host_context *context;

@@ -92,6 +92,7 @@ m3_status m3_backend_create_internal(const m3_backend_vtable *vtable,
     *backend_output = NULL;
     if (vtable == NULL || vtable->destroy_context == NULL ||
         vtable->allocate == NULL || vtable->free_storage == NULL ||
+        vtable->execute == NULL ||
         context == NULL || info == NULL || info->name[0] == '\0') {
         return m3_error_set(error, M3_STATUS_INVALID_ARGUMENT,
                             "backend lifetime contract is incomplete");
@@ -107,6 +108,49 @@ m3_status m3_backend_create_internal(const m3_backend_vtable *vtable,
     *backend_output = backend;
     m3_error_reset(error);
     return M3_STATUS_OK;
+}
+
+m3_status m3_backend_execute(m3_backend *backend,
+                             const m3_command *commands,
+                             size_t command_count,
+                             m3_scratch_arena *scratch,
+                             m3_error *error)
+{
+    size_t required = 0U;
+    size_t available = 0U;
+    m3_status status;
+
+    if (backend == NULL) {
+        return m3_error_set(error, M3_STATUS_INVALID_ARGUMENT,
+                            "execution backend is null");
+    }
+    status = m3_commands_scratch_bytes(backend, commands, command_count,
+                                       &required, error);
+    if (status != M3_STATUS_OK) {
+        return status;
+    }
+    if (scratch != NULL) {
+        if (scratch->offset > scratch->capacity ||
+            (scratch->capacity != 0U && scratch->data == NULL)) {
+            return m3_error_set(error, M3_STATUS_INVALID_ARGUMENT,
+                                "scratch arena state is invalid");
+        }
+        available = scratch->capacity - scratch->offset;
+    }
+    if (required > available) {
+        return m3_error_set(error, M3_STATUS_OUT_OF_MEMORY,
+                            "execution needs %zu scratch bytes", required);
+    }
+    if (command_count == 0U) {
+        m3_error_reset(error);
+        return M3_STATUS_OK;
+    }
+    status = backend->vtable->execute(backend->context, commands,
+                                      command_count, scratch, error);
+    if (status == M3_STATUS_OK) {
+        m3_error_reset(error);
+    }
+    return status;
 }
 
 void m3_backend_free(m3_backend *backend)
