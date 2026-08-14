@@ -24,7 +24,7 @@ typedef struct {
 void m3_weight_stage_io_init(m3_weight_stage_io *io);
 m3_status m3_weight_stage_load_with_io(
     m3_weight_stage *stage, const m3_weight_table *table,
-    m3_backend *backend, m3_weight_stage_progress progress,
+    m3_backend *backend, m3_progress_callback progress,
     void *progress_context, const m3_weight_stage_io *io, m3_error *error);
 
 m3_status m3_weight_stage_open_shards(const m3_weight_table *table,
@@ -32,7 +32,7 @@ m3_status m3_weight_stage_open_shards(const m3_weight_table *table,
                                        int *descriptors, m3_error *error);
 m3_status m3_weight_stage_read_shards(
     m3_weight_stage *stage, const m3_weight_stage_io *io,
-    const int *descriptors, m3_weight_stage_progress progress,
+    const int *descriptors, m3_progress_callback progress,
     void *progress_context, m3_error *error);
 m3_status m3_weight_stage_verify_shards(const m3_weight_table *table,
                                          const int *descriptors,

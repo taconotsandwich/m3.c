@@ -4,16 +4,12 @@
 #define M3_WEIGHT_STAGE_H
 
 #include "m3_backend.h"
+#include "m3_progress.h"
 #include "m3_tensor.h"
 #include "m3_weights.h"
 
-#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
-
-typedef bool (*m3_weight_stage_progress)(void *context,
-                                         uint64_t completed_bytes,
-                                         uint64_t total_bytes);
 
 /* Table is an unchanged builder/inspector result; table/backend are borrowed. */
 /* Both inputs outlive the stage, and the table remains immutable until dispose. */
@@ -32,7 +28,7 @@ void m3_weight_stage_dispose(m3_weight_stage *stage);
 m3_status m3_weight_stage_load(m3_weight_stage *stage,
                                const m3_weight_table *table,
                                m3_backend *backend,
-                               m3_weight_stage_progress progress,
+                               m3_progress_callback progress,
                                void *progress_context, m3_error *error);
 const m3_tensor_view *m3_weight_stage_find_view(
     const m3_weight_stage *stage, const char *name);
