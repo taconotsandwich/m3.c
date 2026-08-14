@@ -34,4 +34,13 @@ m3_status m3_vocoder_decode_chunk(
     m3_progress_callback progress, void *progress_context,
     m3_vocoder_output *output, m3_error *error);
 
+/* The borrowed chunks are contiguous planar F32 waveforms [1,2,512L]
+ * from one backend. Success replaces output with one owned contiguous
+ * planar F32 waveform [1,2,N]. Output may own an input chunk; all reads
+ * finish before a successful replacement releases the old storage. */
+m3_status m3_waveform_assemble(
+    const m3_tensor_view *chunks, size_t chunk_count,
+    uint64_t frame_count, m3_progress_callback progress,
+    void *progress_context, m3_vocoder_output *output, m3_error *error);
+
 #endif
