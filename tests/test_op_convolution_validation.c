@@ -266,13 +266,14 @@ void m3_test_op_conv_transpose_validation(m3_test_context *test)
     m3_op_test_fixture_dispose(&fixture);
 }
 
-void m3_test_op_convolution_metal_unsupported(m3_test_context *test)
+void m3_test_op_convolution_metal_execution(m3_test_context *test)
 {
     const uint64_t input_shape[] = {1U, 1U, 2U};
     const uint64_t weight_shape[] = {1U, 1U, 1U};
     const float input_values[] = {1, 2};
     const float weight_value[] = {3};
     const float sentinel[] = {-7, -8};
+    const float expected[] = {3, 6};
     m3_backend *backend = NULL;
     m3_storage *input_storage = NULL;
     m3_storage *weight_storage = NULL;
@@ -289,7 +290,7 @@ void m3_test_op_convolution_metal_unsupported(m3_test_context *test)
         return;
     }
     M3_TEST_EXPECT(test, status == M3_STATUS_OK,
-                   "create Metal backend for convolution rejection");
+                   "create Metal backend for convolution execution");
     if (backend == NULL) {
         return;
     }
@@ -337,14 +338,21 @@ void m3_test_op_convolution_metal_unsupported(m3_test_context *test)
             memcmp(m3_storage_const_data(output_storage), sentinel,
                    sizeof(sentinel)) == 0,
         "Metal prevalidates convolution without mutation");
+    M3_TEST_EXPECT(
+        test,
+        m3_backend_execute(backend, &command, 1U, NULL, NULL) ==
+                M3_STATUS_INVALID_ARGUMENT &&
+            memcmp(m3_storage_const_data(output_storage), sentinel,
+                   sizeof(sentinel)) == 0,
+        "invalid Metal convolution accepts a null error sink");
     command.descriptor.conv1d.groups = 1U;
     M3_TEST_EXPECT(
         test,
         m3_backend_execute(backend, &command, 1U, NULL, &error) ==
-                M3_STATUS_UNSUPPORTED &&
-            memcmp(m3_storage_const_data(output_storage), sentinel,
-                   sizeof(sentinel)) == 0,
-        "Metal rejects convolution without CPU fallback or mutation");
+                M3_STATUS_OK &&
+            memcmp(m3_storage_const_data(output_storage), expected,
+                   sizeof(expected)) == 0,
+        "Metal executes valid convolution without CPU fallback");
     m3_storage_free(output_storage);
     m3_storage_free(weight_storage);
     m3_storage_free(input_storage);
