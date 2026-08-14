@@ -22,5 +22,6 @@ m3_status m3_backend_create_internal(const m3_backend_vtable *vtable,
                                      const m3_backend_info *info,
                                      m3_backend **backend,
                                      m3_error *error);
+void *m3_storage_handle_internal(const m3_storage *storage);
 
 #endif

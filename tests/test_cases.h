@@ -14,6 +14,7 @@
 #include "cases/prompt_tokenizer.inc"
 #include "cases/host_utilities.inc"
 #include "cases/transformer_precision.inc"
+#include "cases/metal_operations.inc"
 #include "cases/qwen_runtime.inc"
 #include "cases/rvq_condition.inc"
 #include "cases/flow_runtime.inc"
