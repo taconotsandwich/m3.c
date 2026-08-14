@@ -162,7 +162,7 @@ static size_t m3_weight_stage_buffer_size(const m3_weight_stage *stage,
 
 m3_status m3_weight_stage_read_shards(
     m3_weight_stage *stage, const m3_weight_stage_io *io,
-    const int *descriptors, m3_weight_stage_progress progress,
+    const int *descriptors, m3_progress_callback progress,
     void *progress_context, m3_error *error)
 {
     size_t buffer_size =

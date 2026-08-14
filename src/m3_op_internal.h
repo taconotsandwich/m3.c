@@ -14,6 +14,11 @@ typedef struct {
     int32_t index;
 } m3_top_pair;
 
+bool m3_top_precedes(float left_value, int32_t left_index,
+                     float right_value, int32_t right_index);
+void m3_top_consider(m3_top_pair *pairs, size_t *pair_count, size_t capacity,
+                     float value, int32_t index);
+
 bool m3_op_dtype_float(m3_dtype dtype);
 bool m3_op_shape_equal(const m3_tensor_view *left,
                        const m3_tensor_view *right);
@@ -51,6 +56,7 @@ size_t m3_op_broadcast_offset(const m3_tensor_view *input,
                               const m3_tensor_view *output,
                               size_t output_flat_index);
 float m3_op_load_float(const m3_tensor_view *view, size_t byte_offset);
+float m3_op_round_float(m3_dtype dtype, float value);
 int32_t m3_op_load_i32(const m3_tensor_view *view, size_t byte_offset);
 void m3_op_store_float(m3_tensor_view *view, size_t byte_offset,
                        float value);

@@ -5,11 +5,39 @@
 #include <math.h>
 #include <stddef.h>
 
-static bool m3_host_top_precedes(float left_value, int32_t left_index,
-                                 float right_value, int32_t right_index)
+bool m3_top_precedes(float left_value, int32_t left_index,
+                     float right_value, int32_t right_index)
 {
     return left_value > right_value ||
            (left_value == right_value && left_index < right_index);
+}
+
+void m3_top_consider(m3_top_pair *pairs, size_t *pair_count, size_t capacity,
+                     float value, int32_t index)
+{
+    size_t position = 0U;
+
+    if (capacity == 0U) {
+        return;
+    }
+    while (position < *pair_count &&
+           !m3_top_precedes(value, index, pairs[position].value,
+                            pairs[position].index)) {
+        ++position;
+    }
+    if (position < capacity) {
+        size_t move = *pair_count < capacity ? *pair_count : capacity - 1U;
+
+        while (move > position) {
+            pairs[move] = pairs[move - 1U];
+            --move;
+        }
+        pairs[position].value = value;
+        pairs[position].index = index;
+        if (*pair_count < capacity) {
+            ++*pair_count;
+        }
+    }
 }
 
 static m3_status m3_host_top_k(const m3_op_top_k *op,
@@ -51,27 +79,8 @@ static m3_status m3_host_top_k(const m3_op_top_k *op,
                 m3_op_element_offset(
                     op->logits, row * vocabulary + vocabulary_index));
             int32_t integer_index = (int32_t)vocabulary_index;
-            size_t position = 0U;
 
-            while (position < pair_count &&
-                   !m3_host_top_precedes(
-                       value, integer_index, pairs[position].value,
-                       pairs[position].index)) {
-                ++position;
-            }
-            if (position < k) {
-                size_t move = pair_count < k ? pair_count : k - 1U;
-
-                while (move > position) {
-                    pairs[move] = pairs[move - 1U];
-                    --move;
-                }
-                pairs[position].value = value;
-                pairs[position].index = integer_index;
-                if (pair_count < k) {
-                    ++pair_count;
-                }
-            }
+            m3_top_consider(pairs, &pair_count, k, value, integer_index);
         }
         for (index = 0U; index < k; ++index) {
             size_t output_flat = row * k + index;

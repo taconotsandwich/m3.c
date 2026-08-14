@@ -32,7 +32,7 @@ void m3_weight_stage_dispose(m3_weight_stage *stage)
 m3_status m3_weight_stage_load(m3_weight_stage *stage,
                                const m3_weight_table *table,
                                m3_backend *backend,
-                               m3_weight_stage_progress progress,
+                               m3_progress_callback progress,
                                void *progress_context, m3_error *error)
 {
     m3_weight_stage_io io;

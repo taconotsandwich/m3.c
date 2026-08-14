@@ -146,7 +146,9 @@ static m3_status m3_host_rms_norm(const m3_op_rms_norm *op)
             float scale = m3_op_load_float(
                 op->scale, op->scale->byte_offset +
                                channel * op->scale->byte_strides[0]);
-            float result = (value * inverse_rms) * scale;
+            float normalized = m3_op_round_float(
+                op->input->metadata.dtype, value * inverse_rms);
+            float result = normalized * scale;
 
             m3_op_store_float(op->output,
                               m3_op_element_offset(op->output, flat),
