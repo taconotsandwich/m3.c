@@ -14,6 +14,8 @@ const char *m3_dtype_name(m3_dtype dtype)
         return "F16";
     case M3_DTYPE_BF16:
         return "BF16";
+    case M3_DTYPE_I32:
+        return "I32";
     }
 
     return "unknown";
@@ -23,6 +25,7 @@ size_t m3_dtype_size(m3_dtype dtype)
 {
     switch (dtype) {
     case M3_DTYPE_F32:
+    case M3_DTYPE_I32:
         return 4U;
     case M3_DTYPE_F16:
     case M3_DTYPE_BF16:

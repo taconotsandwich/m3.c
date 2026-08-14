@@ -259,6 +259,10 @@ void m3_test_safetensors_header(m3_test_context *test)
                        metadata.tensor_bytes == 14U,
                    "aggregate supported tensor dtypes");
     M3_TEST_EXPECT(test,
+                   metadata.data_section_offset ==
+                       8U + (uint64_t)strlen(header),
+                   "retain absolute Safetensors data-section offset");
+    M3_TEST_EXPECT(test,
                    metadata.tensors[0].tensor.dtype == M3_DTYPE_F32 &&
                        metadata.tensors[1].tensor.dtype == M3_DTYPE_F16 &&
                        metadata.tensors[2].tensor.dtype == M3_DTYPE_BF16,

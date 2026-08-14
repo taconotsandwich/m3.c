@@ -103,6 +103,7 @@ void m3_safetensors_metadata_init(m3_safetensors_metadata *metadata)
     metadata->tensors = NULL;
     metadata->tensor_count = 0U;
     metadata->tensor_bytes = 0U;
+    metadata->data_section_offset = 0U;
     metadata->has_metadata = false;
 }
 
@@ -599,6 +600,12 @@ m3_status m3_safetensors_inspect_file(const char *path,
                             "Safetensors header must begin with '{'");
     }
     payload_size = file_size - 8U - header_length;
+    if (header_length > UINT64_MAX - 8U) {
+        free(header);
+        return m3_error_set(error, M3_STATUS_OVERFLOW,
+                            "Safetensors data section offset overflows");
+    }
+    parsed.data_section_offset = 8U + header_length;
     status = m3_safetensors_parse_header(header, (size_t)header_length,
                                          payload_size, &parsed, error);
     free(header);

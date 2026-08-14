@@ -23,6 +23,7 @@ typedef struct {
     m3_safetensors_tensor *tensors;
     size_t tensor_count;
     size_t tensor_bytes;
+    uint64_t data_section_offset;
     bool has_metadata;
 } m3_safetensors_metadata;
 

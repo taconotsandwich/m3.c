@@ -31,6 +31,10 @@ void m3_test_tensor_contract(m3_test_context *test)
                    "F16 byte size");
     M3_TEST_EXPECT(test, m3_dtype_size(M3_DTYPE_BF16) == 2U,
                    "BF16 byte size");
+    M3_TEST_EXPECT(test, m3_dtype_size(M3_DTYPE_I32) == 4U,
+                   "I32 byte size");
+    M3_TEST_EXPECT(test, strcmp(m3_dtype_name(M3_DTYPE_I32), "I32") == 0,
+                   "I32 dtype name");
     M3_TEST_EXPECT(test, strcmp(m3_dtype_name(M3_DTYPE_BF16), "BF16") == 0,
                    "BF16 dtype name");
     M3_TEST_EXPECT(test, m3_dtype_size((m3_dtype)99) == 0U,
