@@ -4,6 +4,7 @@
 #define M3_MODEL_H
 
 #include "m3_error.h"
+#include "m3_weights.h"
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -49,5 +50,9 @@ m3_status m3_model_metadata_add_tensor(m3_model_metadata *metadata,
 m3_status m3_model_inspect_directory(const char *path,
                                      m3_model_metadata *metadata,
                                      m3_error *error);
+m3_status m3_music3_inspect_weight_table(const char *model_root,
+                                         m3_component_id component,
+                                         m3_weight_table *table,
+                                         m3_error *error);
 
 #endif

@@ -9,21 +9,31 @@
 #include <stdint.h>
 
 typedef struct {
-    const char *shard_path;
+    const char *path;
     const m3_safetensors_metadata *metadata;
-} m3_weight_shard;
+} m3_weight_shard_source;
+
+typedef struct {
+    char *path;
+    uint64_t data_section_offset;
+    uint64_t payload_bytes;
+    m3_file_snapshot snapshot;
+} m3_weight_shard_record;
 
 typedef struct {
     char *name;
     m3_tensor_metadata tensor;
-    char *shard_path;
-    uint64_t absolute_file_start;
-    uint64_t absolute_file_end;
+    size_t shard_index;
+    uint64_t data_start;
+    uint64_t data_end;
 } m3_weight_binding;
 
 typedef struct {
+    m3_weight_shard_record *shards;
+    size_t shard_count;
     m3_weight_binding *bindings;
     size_t binding_count;
+    uint64_t aggregate_payload_bytes;
 } m3_weight_table;
 
 typedef struct {
@@ -34,7 +44,7 @@ typedef struct {
 void m3_weight_table_init(m3_weight_table *table);
 void m3_weight_table_dispose(m3_weight_table *table);
 m3_status m3_weight_table_build(m3_weight_table *table,
-                                const m3_weight_shard *shards,
+                                const m3_weight_shard_source *shards,
                                 size_t shard_count, m3_error *error);
 const m3_weight_binding *m3_weight_table_find(const m3_weight_table *table,
                                               const char *name);
