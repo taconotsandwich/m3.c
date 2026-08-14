@@ -9,10 +9,13 @@
 int main(void)
 {
     static const m3_test_case cases[] = {
-        {"public and error contracts", m3_test_api_contract},
-        {"tensor contract", m3_test_tensor_contract},
-        {"model contract", m3_test_model_contract},
-        {"fixture contract", m3_test_fixture_contract}
+#define M3_TEST_CASE(function, description) {description, function},
+#include "cases/core.inc"
+#include "cases/model_loader.inc"
+#include "cases/metal_runtime.inc"
+#include "cases/prompt_tokenizer.inc"
+#include "cases/host_utilities.inc"
+#undef M3_TEST_CASE
     };
     static const size_t case_count = sizeof(cases) / sizeof(cases[0]);
 

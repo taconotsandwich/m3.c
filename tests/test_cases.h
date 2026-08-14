@@ -5,9 +5,15 @@
 
 #include "m3_test.h"
 
-void m3_test_api_contract(m3_test_context *test);
-void m3_test_fixture_contract(m3_test_context *test);
-void m3_test_model_contract(m3_test_context *test);
-void m3_test_tensor_contract(m3_test_context *test);
+#define M3_TEST_CASE(function, description) \
+    void function(m3_test_context *test);
+
+#include "cases/core.inc"
+#include "cases/model_loader.inc"
+#include "cases/metal_runtime.inc"
+#include "cases/prompt_tokenizer.inc"
+#include "cases/host_utilities.inc"
+
+#undef M3_TEST_CASE
 
 #endif
