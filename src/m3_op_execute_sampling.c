@@ -102,16 +102,22 @@ static m3_status m3_host_categorical(const m3_op_categorical *op)
         float cumulative = 0.0F;
         float target;
         size_t index;
-        size_t selected = vocabulary - 1U;
+        size_t last_positive = 0U;
+        size_t selected;
 
         for (index = 0U; index < vocabulary; ++index) {
-            sum = sum + m3_op_load_float(
-                            op->probabilities,
-                            m3_op_element_offset(
-                                op->probabilities,
-                                row * vocabulary + index));
+            float probability = m3_op_load_float(
+                op->probabilities,
+                m3_op_element_offset(
+                    op->probabilities, row * vocabulary + index));
+
+            sum = sum + probability;
+            if (probability > 0.0F) {
+                last_positive = index;
+            }
         }
         target = uniform * sum;
+        selected = last_positive;
         for (index = 0U; index < vocabulary; ++index) {
             cumulative = cumulative + m3_op_load_float(
                                           op->probabilities,
