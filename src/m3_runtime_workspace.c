@@ -28,6 +28,15 @@ void m3_runtime_workspace_dispose(m3_runtime_workspace *workspace)
     }
     if (workspace->storages != NULL) {
         for (index = 0U; index < workspace->count; ++index) {
+            size_t later;
+
+            for (later = index + 1U; later < workspace->count;
+                 ++later) {
+                if (workspace->storages[later] ==
+                    workspace->storages[index]) {
+                    workspace->storages[later] = NULL;
+                }
+            }
             m3_storage_free(workspace->storages[index]);
         }
     }

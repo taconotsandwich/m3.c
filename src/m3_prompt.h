@@ -9,11 +9,6 @@
 #include <stdint.h>
 
 typedef struct {
-    const char *data;
-    size_t length;
-} m3_text_view;
-
-typedef struct {
     char *data;
     size_t length;
 } m3_prompt_text;

@@ -48,6 +48,14 @@ void m3_flow_output_dispose(m3_flow_output *output)
     }
     if (output->storages != NULL) {
         for (index = 0U; index < output->chunk_count; ++index) {
+            size_t later;
+
+            for (later = index + 1U; later < output->chunk_count;
+                 ++later) {
+                if (output->storages[later] == output->storages[index]) {
+                    output->storages[later] = NULL;
+                }
+            }
             m3_storage_free(output->storages[index]);
         }
     }

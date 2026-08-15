@@ -21,6 +21,9 @@ typedef struct {
 
 bool m3_flow_test_fixture_init(m3_flow_test_fixture *fixture,
                                uint64_t frame_count);
+bool m3_flow_test_fixture_init_music3(
+    m3_flow_test_fixture *fixture, uint64_t frame_count,
+    m3_backend *backend);
 void m3_flow_test_fixture_dispose(m3_flow_test_fixture *fixture);
 bool m3_flow_test_strided_frames(m3_flow_test_fixture *fixture,
                                  uint64_t frame_count,

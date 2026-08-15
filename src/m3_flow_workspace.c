@@ -110,24 +110,22 @@ void m3_flow_workspace_specs(const m3_flow_config *config,
 }
 
 static m3_status m3_flow_plan_add(
-    const m3_backend_info *info, uint64_t bytes, uint64_t *planned,
-    m3_error *error)
+    uint64_t bytes, m3_flow_allocation_plan *plan, m3_error *error)
 {
-    if (bytes > info->maximum_storage_bytes) {
-        return m3_error_set(error, M3_STATUS_OUT_OF_RANGE,
-                            "flow runtime tensor exceeds storage limit");
-    }
-    if (bytes > UINT64_MAX - *planned) {
+    if (bytes > UINT64_MAX - plan->added_bytes) {
         return m3_error_set(error, M3_STATUS_OVERFLOW,
                             "flow runtime allocation plan overflows");
     }
-    *planned += bytes;
+    plan->added_bytes += bytes;
+    if (bytes > plan->largest_storage_bytes) {
+        plan->largest_storage_bytes = bytes;
+    }
     return M3_STATUS_OK;
 }
 
 static m3_status m3_flow_plan_spec(
-    const m3_backend_info *info, const m3_runtime_tensor_spec *spec,
-    uint64_t *planned, m3_error *error)
+    const m3_runtime_tensor_spec *spec, m3_flow_allocation_plan *plan,
+    m3_error *error)
 {
     m3_tensor_metadata metadata;
     m3_status status = m3_tensor_metadata_init(
@@ -135,14 +133,14 @@ static m3_status m3_flow_plan_spec(
 
     if (status == M3_STATUS_OK) {
         status = m3_flow_plan_add(
-            info, (uint64_t)metadata.byte_count, planned, error);
+            (uint64_t)metadata.byte_count, plan, error);
     }
     return status;
 }
 
 static m3_status m3_flow_plan_outputs(
-    const m3_backend_info *info, const m3_flow_config *config,
-    uint64_t frame_count, size_t chunk_count, uint64_t *planned,
+    const m3_flow_config *config, uint64_t frame_count,
+    size_t chunk_count, m3_flow_allocation_plan *plan,
     m3_error *error)
 {
     size_t index;
@@ -172,53 +170,39 @@ static m3_status m3_flow_plan_outputs(
         }
         if (status == M3_STATUS_OK) {
             status = m3_flow_plan_add(
-                info, (uint64_t)metadata.byte_count, planned, error);
+                (uint64_t)metadata.byte_count, plan, error);
         }
         (void)start;
     }
     return status;
 }
 
-m3_status m3_flow_preflight(
-    m3_backend *backend, const m3_flow_config *config,
+m3_status m3_flow_allocation_plan_build(
+    const m3_flow_config *config,
     const m3_tensor_view *frame_hiddens, size_t chunk_count,
     uint64_t maximum_length, const m3_runtime_tensor_spec *flow_specs,
-    m3_error *error)
+    m3_flow_allocation_plan *plan, m3_error *error)
 {
     m3_runtime_tensor_spec condition_specs[M3_CONDITION_WORKSPACE_COUNT];
-    m3_backend_allocation_stats stats;
-    m3_backend_info info;
     uint64_t maximum_frames;
     uint64_t condition_shape[3];
     m3_tensor_metadata condition_output;
-    uint64_t planned;
+    m3_flow_allocation_plan built = {0U, 0U};
     size_t index;
     m3_status status;
 
-    if (backend == NULL || config == NULL || frame_hiddens == NULL ||
-        flow_specs == NULL || chunk_count == 0U || maximum_length == 0U) {
+    if (config == NULL || frame_hiddens == NULL || flow_specs == NULL ||
+        plan == NULL || chunk_count == 0U || maximum_length == 0U) {
         return m3_error_set(error, M3_STATUS_INVALID_ARGUMENT,
                             "flow allocation plan is invalid");
     }
-    status = m3_backend_get_info(backend, &info, error);
-    if (status == M3_STATUS_OK) {
-        status = m3_backend_get_allocation_stats(backend, &stats, error);
-    }
-    if (status != M3_STATUS_OK) {
-        return status;
-    }
-    planned = (uint64_t)stats.live_allocated_bytes;
-    if ((size_t)planned != stats.live_allocated_bytes) {
-        return m3_error_set(error, M3_STATUS_OVERFLOW,
-                            "flow live allocation count overflows");
-    }
     status = m3_flow_plan_outputs(
-        &info, config, frame_hiddens->metadata.shape[1], chunk_count,
-        &planned, error);
+        config, frame_hiddens->metadata.shape[1], chunk_count, &built,
+        error);
     for (index = 0U; index < M3_FLOW_WORKSPACE_COUNT &&
                     status == M3_STATUS_OK; ++index) {
         status = m3_flow_plan_spec(
-            &info, &flow_specs[index], &planned, error);
+            &flow_specs[index], &built, error);
     }
     maximum_frames = frame_hiddens->metadata.shape[1];
     if (maximum_frames > config->chunk_frames) {
@@ -233,8 +217,7 @@ m3_status m3_flow_preflight(
     }
     if (status == M3_STATUS_OK) {
         status = m3_flow_plan_add(
-            &info, (uint64_t)condition_output.byte_count, &planned,
-            error);
+            (uint64_t)condition_output.byte_count, &built, error);
     }
     m3_condition_workspace_specs(
         &config->condition, maximum_frames, maximum_length,
@@ -242,19 +225,61 @@ m3_status m3_flow_preflight(
     for (index = 0U; index < M3_CONDITION_WORKSPACE_COUNT &&
                     status == M3_STATUS_OK; ++index) {
         status = m3_flow_plan_spec(
-            &info, &condition_specs[index], &planned, error);
-    }
-    if (status == M3_STATUS_OK &&
-        info.recommended_working_set_bytes != 0U &&
-        planned > info.recommended_working_set_bytes) {
-        status = m3_error_set(
-            error, M3_STATUS_OUT_OF_MEMORY,
-            "flow runtime exceeds recommended working set");
+            &condition_specs[index], &built, error);
     }
     if (status == M3_STATUS_OK) {
+        *plan = built;
         m3_error_reset(error);
     }
     return status;
+}
+
+m3_status m3_flow_preflight(
+    m3_backend *backend, const m3_flow_config *config,
+    const m3_tensor_view *frame_hiddens, size_t chunk_count,
+    uint64_t maximum_length, const m3_runtime_tensor_spec *flow_specs,
+    m3_error *error)
+{
+    m3_backend_allocation_stats stats;
+    m3_backend_info info;
+    m3_flow_allocation_plan plan = {0U, 0U};
+    uint64_t live;
+    m3_status status;
+
+    if (backend == NULL) {
+        return m3_error_set(error, M3_STATUS_INVALID_ARGUMENT,
+                            "flow backend is null");
+    }
+    status = m3_flow_allocation_plan_build(
+        config, frame_hiddens, chunk_count, maximum_length, flow_specs,
+        &plan, error);
+    if (status == M3_STATUS_OK) {
+        status = m3_backend_get_info(backend, &info, error);
+    }
+    if (status == M3_STATUS_OK) {
+        status = m3_backend_get_allocation_stats(backend, &stats, error);
+    }
+    if (status != M3_STATUS_OK) {
+        return status;
+    }
+    live = (uint64_t)stats.live_allocated_bytes;
+    if ((size_t)live != stats.live_allocated_bytes ||
+        plan.added_bytes > UINT64_MAX - live) {
+        return m3_error_set(error, M3_STATUS_OVERFLOW,
+                            "flow live allocation count overflows");
+    }
+    if (plan.largest_storage_bytes > info.maximum_storage_bytes) {
+        return m3_error_set(error, M3_STATUS_OUT_OF_RANGE,
+                            "flow runtime tensor exceeds storage limit");
+    }
+    if (info.recommended_working_set_bytes != 0U &&
+        live + plan.added_bytes > info.recommended_working_set_bytes) {
+        return m3_error_set(
+            error, M3_STATUS_OUT_OF_MEMORY,
+            "flow runtime exceeds recommended working set");
+    }
+    m3_error_reset(error);
+    return M3_STATUS_OK;
 }
 
 m3_status m3_flow_view(m3_flow_run *run, size_t slot, m3_dtype dtype,

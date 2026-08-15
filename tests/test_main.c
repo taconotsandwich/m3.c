@@ -24,6 +24,7 @@ int main(void)
 #include "cases/rvq_condition.inc"
 #include "cases/flow_runtime.inc"
 #include "cases/vocoder_runtime.inc"
+#include "cases/music3_engine.inc"
 #undef M3_TEST_CASE
     };
     static const size_t case_count = sizeof(cases) / sizeof(cases[0]);

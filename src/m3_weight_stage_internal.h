@@ -26,6 +26,9 @@ m3_status m3_weight_stage_load_with_io(
     m3_weight_stage *stage, const m3_weight_table *table,
     m3_backend *backend, m3_progress_callback progress,
     void *progress_context, const m3_weight_stage_io *io, m3_error *error);
+m3_status m3_weight_stage_validate(
+    const m3_weight_stage *stage, const m3_weight_table *table,
+    m3_backend *backend, m3_error *error);
 
 m3_status m3_weight_stage_open_shards(const m3_weight_table *table,
                                        const m3_weight_stage_io *io,

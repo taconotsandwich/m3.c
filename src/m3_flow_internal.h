@@ -81,6 +81,11 @@ typedef struct {
     uint64_t maximum_length;
 } m3_flow_run;
 
+typedef struct {
+    uint64_t added_bytes;
+    uint64_t largest_storage_bytes;
+} m3_flow_allocation_plan;
+
 void m3_flow_config_init(m3_flow_config *config);
 m3_status m3_flow_requirements(m3_flow_requirement_set *requirements,
                                m3_error *error);
@@ -111,6 +116,12 @@ void m3_flow_blend_coefficients(float timestep, float *noise,
 void m3_flow_workspace_specs(const m3_flow_config *config,
                              uint64_t maximum_length,
                              m3_runtime_tensor_spec *specs);
+m3_status m3_flow_allocation_plan_build(
+    const m3_flow_config *config,
+    const m3_tensor_view *frame_hiddens, size_t chunk_count,
+    uint64_t maximum_length,
+    const m3_runtime_tensor_spec *flow_specs,
+    m3_flow_allocation_plan *plan, m3_error *error);
 m3_status m3_flow_preflight(
     m3_backend *backend, const m3_flow_config *config,
     const m3_tensor_view *frame_hiddens, size_t chunk_count,

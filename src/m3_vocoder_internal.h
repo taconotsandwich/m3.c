@@ -129,6 +129,9 @@ m3_status m3_vocoder_runtime_bind(
     m3_error *error);
 const m3_vocoder_weights *m3_vocoder_runtime_weights(
     const m3_vocoder_runtime *runtime);
+m3_status m3_vocoder_runtime_validate(
+    const m3_vocoder_runtime *runtime, m3_backend *backend,
+    m3_error *error);
 m3_status m3_vocoder_decode_measure(
     const m3_vocoder_plan_config *config, uint64_t latent_length,
     m3_vocoder_decode_measurement *measurement, m3_error *error);

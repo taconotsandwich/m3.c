@@ -170,8 +170,9 @@ static bool m3_flow_test_frames(m3_flow_test_fixture *fixture,
     return ready;
 }
 
-bool m3_flow_test_fixture_init(m3_flow_test_fixture *fixture,
-                               uint64_t frame_count)
+static bool m3_flow_test_fixture_build(
+    m3_flow_test_fixture *fixture, uint64_t frame_count,
+    m3_backend *backend, bool music3)
 {
     bool ready;
 
@@ -179,12 +180,25 @@ bool m3_flow_test_fixture_init(m3_flow_test_fixture *fixture,
         return false;
     }
     (void)memset(fixture, 0, sizeof(*fixture));
-    ready = m3_op_test_fixture_init(&fixture->fixture);
-    fixture->config = (m3_flow_config){
-        2U, 2U, 1U, 1U, 4U, 3U, 2U, 4U,
-        4U, 2U, 1U, 2U, 10U, 1.7F, 1.0e-5F, 10000.0F,
-        {2U, 2U, 2U, 1U, 1U}
-    };
+    ready = backend == NULL
+                ? m3_op_test_fixture_init(&fixture->fixture)
+                : m3_op_test_fixture_init_backend(
+                      &fixture->fixture, backend, false);
+    if (music3) {
+        fixture->config = (m3_flow_config){
+            M3_FLOW_LATENT_CHANNELS, 2U, 1U, 1U, 4U, 3U, 2U, 4U,
+            M3_FLOW_CHUNK_FRAMES, M3_FLOW_CHUNK_HOP,
+            M3_FLOW_CARRY_LENGTH, M3_FLOW_INFERENCE_STEPS,
+            M3_FLOW_MAX_FRAMES, 1.7F, 1.0e-5F, 10000.0F,
+            {2U, 2U, 2U, 441U, 128U}
+        };
+    } else {
+        fixture->config = (m3_flow_config){
+            2U, 2U, 1U, 1U, 4U, 3U, 2U, 4U,
+            4U, 2U, 1U, 2U, 10U, 1.7F, 1.0e-5F, 10000.0F,
+            {2U, 2U, 2U, 1U, 1U}
+        };
+    }
     if (ready) {
         ready = m3_flow_test_root_weights(fixture) &&
                 m3_flow_test_layer_weights(fixture) &&
@@ -195,6 +209,21 @@ bool m3_flow_test_fixture_init(m3_flow_test_fixture *fixture,
         m3_flow_test_fixture_dispose(fixture);
     }
     return ready;
+}
+
+bool m3_flow_test_fixture_init(m3_flow_test_fixture *fixture,
+                               uint64_t frame_count)
+{
+    return m3_flow_test_fixture_build(
+        fixture, frame_count, NULL, false);
+}
+
+bool m3_flow_test_fixture_init_music3(
+    m3_flow_test_fixture *fixture, uint64_t frame_count,
+    m3_backend *backend)
+{
+    return m3_flow_test_fixture_build(
+        fixture, frame_count, backend, true);
 }
 
 void m3_flow_test_fixture_dispose(m3_flow_test_fixture *fixture)

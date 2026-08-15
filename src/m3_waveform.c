@@ -248,6 +248,29 @@ static m3_status m3_waveform_plan_build(
     return M3_STATUS_OK;
 }
 
+m3_status m3_waveform_measure(uint64_t frame_count, size_t chunk_count,
+                              m3_waveform_measurement *measurement,
+                              m3_error *error)
+{
+    m3_waveform_plan plan;
+    m3_status status;
+
+    if (measurement == NULL) {
+        return m3_error_set(error, M3_STATUS_INVALID_ARGUMENT,
+                            "waveform measurement output is null");
+    }
+    status = m3_waveform_plan_build(
+        frame_count, chunk_count, &plan, error);
+    if (status != M3_STATUS_OK) {
+        return status;
+    }
+    measurement->output_samples = plan.output_samples;
+    measurement->output_bytes = plan.output_bytes;
+    measurement->progress_total = plan.progress_total;
+    m3_error_reset(error);
+    return M3_STATUS_OK;
+}
+
 static m3_status m3_waveform_validate_chunks(
     const m3_tensor_view *chunks, m3_waveform_plan *plan,
     m3_error *error)
