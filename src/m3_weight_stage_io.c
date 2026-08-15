@@ -1,5 +1,9 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 
+#if !defined(_DARWIN_C_SOURCE)
+#define _DARWIN_C_SOURCE
+#endif
+
 #include "m3_weight_stage_internal.h"
 
 #include "m3_file.h"
@@ -13,8 +17,18 @@
 static int m3_weight_stage_open_default(void *context, const char *path,
                                         int flags)
 {
+    int descriptor;
+    int saved_errno;
+
     (void)context;
-    return open(path, flags);
+    descriptor = open(path, flags);
+    if (descriptor < 0 || fcntl(descriptor, F_NOCACHE, 1) == 0) {
+        return descriptor;
+    }
+    saved_errno = errno;
+    (void)close(descriptor);
+    errno = saved_errno;
+    return -1;
 }
 
 static ssize_t m3_weight_stage_pread_default(void *context, int descriptor,
