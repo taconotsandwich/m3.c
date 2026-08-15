@@ -78,10 +78,14 @@ static bool m3_test_metal_matmul_cases(
     const uint64_t left_shape[] = {2U, 3U};
     const uint64_t right_shape[] = {3U, 2U};
     const uint64_t output_shape[] = {2U, 2U};
-    const size_t left_strides[] = {4U * sizeof(float), sizeof(float)};
-    const size_t right_strides[] = {sizeof(float), 3U * sizeof(float)};
-    const float left_backing[] = {1, 2, 3, 91, 4, 5, 6};
-    const float right_backing[] = {1, 3, 5, 2, 4, 6};
+    const size_t left_strides[] = {7U * sizeof(float),
+                                   2U * sizeof(float)};
+    const size_t right_strides[] = {3U * sizeof(float),
+                                    2U * sizeof(float)};
+    const float left_backing[] = {
+        1, 91, 2, 92, 3, 93, 94, 4, 95, 5, 96, 6
+    };
+    const float right_backing[] = {1, 91, 2, 3, 92, 4, 5, 93, 6};
     const float zeros4[] = {0, 0, 0, 0};
     const float expected[] = {22, 28, 49, 64};
     const uint16_t f16_left[] = {0x3c00U, 0x4000U};
@@ -108,7 +112,7 @@ static bool m3_test_metal_matmul_cases(
                        m3_metal_dense_tensor(
                            fixture, &output, M3_DTYPE_F32, 2U,
                            output_shape, zeros4),
-                   "create strided F32 Metal matmul");
+                   "create reduction-strided F32 Metal matmul");
     if (output.host.storage == NULL) {
         return false;
     }
@@ -120,7 +124,8 @@ static bool m3_test_metal_matmul_cases(
                    m3_metal_dense_execute(
                        fixture, &host, &metal, 1U, &error) &&
                        m3_metal_dense_equal(&output),
-                   "Metal matmul matches host for strided F32 inputs");
+                   "Metal matmul matches host for non-unit reduction "
+                   "strides");
     for (index = 0U; index < 4U; ++index) {
         M3_TEST_EXPECT(test,
                        m3_op_test_f32(&output.metal)[index] ==
@@ -240,12 +245,18 @@ static bool m3_test_metal_linear_strided(
     const uint64_t weight_shape[] = {2U, 3U};
     const uint64_t bias_shape[] = {2U};
     const uint64_t output_shape[] = {1U, 2U, 2U};
-    const size_t input_strides[] = {8U * sizeof(float),
-                                    4U * sizeof(float), sizeof(float)};
-    const size_t weight_strides[] = {4U * sizeof(float), sizeof(float)};
+    const size_t input_strides[] = {14U * sizeof(float),
+                                    7U * sizeof(float),
+                                    2U * sizeof(float)};
+    const size_t weight_strides[] = {7U * sizeof(float),
+                                     2U * sizeof(float)};
     const size_t bias_strides[] = {2U * sizeof(float)};
-    const float input_backing[] = {1, 2, 3, 91, 4, 5, 6};
-    const float weight_backing[] = {1, 0, -1, 92, 0.5F, 0.5F, 0.5F};
+    const float input_backing[] = {
+        1, 91, 2, 92, 3, 93, 94, 4, 95, 5, 96, 6
+    };
+    const float weight_backing[] = {
+        1, 91, 0, 92, -1, 93, 94, 0.5F, 95, 0.5F, 96, 0.5F
+    };
     const float bias_backing[] = {1, 93, -1};
     const float zeros[] = {0, 0, 0, 0};
     const float expected_bias[] = {-1, 2, -1, 6.5F};
@@ -275,7 +286,7 @@ static bool m3_test_metal_linear_strided(
                        m3_metal_dense_tensor(
                            fixture, &output, M3_DTYPE_F32, 3U,
                            output_shape, zeros),
-                   "create strided rank-three Metal linear");
+                   "create feature-strided rank-three Metal linear");
     if (output.host.storage == NULL) {
         return false;
     }
@@ -287,7 +298,8 @@ static bool m3_test_metal_linear_strided(
                    m3_metal_dense_execute(
                        fixture, &host, &metal, 1U, &error) &&
                        m3_metal_dense_equal(&output),
-                   "Metal biased linear matches host for strided inputs");
+                   "Metal biased linear matches host for non-unit feature "
+                   "strides");
     for (index = 0U; index < 4U; ++index) {
         M3_TEST_EXPECT(test,
                        m3_op_test_f32(&output.metal)[index] ==
