@@ -88,6 +88,9 @@ static void m3_metal_free(void *context, void *handle, void *data)
     (void)context;
     (void)data;
     if (handle != NULL) {
+        id<MTLBuffer> buffer = (__bridge id<MTLBuffer>)handle;
+
+        (void)[buffer setPurgeableState:MTLPurgeableStateEmpty];
         CFRelease((CFTypeRef)handle);
     }
 }
