@@ -33,6 +33,8 @@ static bool m3_graph_coreml_build(m3_graph **graph,
     m3_graph_value_id bias = M3_GRAPH_VALUE_NONE;
     bool ready;
 
+    *input = M3_GRAPH_VALUE_NONE;
+    *output = M3_GRAPH_VALUE_NONE;
     m3_graph_value_desc_init(&value, M3_GRAPH_INPUT, M3_DTYPE_F32, 1U,
                              shape);
     ready = m3_graph_create(graph, error) == M3_STATUS_OK &&

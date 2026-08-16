@@ -10,17 +10,20 @@ static m3_status m3_graph_input(m3_graph_value_id value,
                                  const m3_tensor_view **view,
                                  m3_error *error)
 {
+    *view = NULL;
     if (value == M3_GRAPH_VALUE_NONE) {
         if (optional) {
             *view = NULL;
             return M3_STATUS_OK;
         }
-        return m3_error_set(error, M3_STATUS_INVALID_ARGUMENT,
-                            "required graph node input is absent");
+        (void)m3_error_set(error, M3_STATUS_INVALID_ARGUMENT,
+                           "required graph node input is absent");
+        return M3_STATUS_INVALID_ARGUMENT;
     }
     if ((size_t)value >= value_count) {
-        return m3_error_set(error, M3_STATUS_OUT_OF_RANGE,
-                            "graph node input is out of range");
+        (void)m3_error_set(error, M3_STATUS_OUT_OF_RANGE,
+                           "graph node input is out of range");
+        return M3_STATUS_OUT_OF_RANGE;
     }
     *view = &views[value];
     return M3_STATUS_OK;
@@ -32,9 +35,11 @@ static m3_status m3_graph_output(m3_graph_value_id value,
                                   m3_tensor_view **view,
                                   m3_error *error)
 {
+    *view = NULL;
     if (value == M3_GRAPH_VALUE_NONE || (size_t)value >= value_count) {
-        return m3_error_set(error, M3_STATUS_OUT_OF_RANGE,
-                            "graph node output is absent or out of range");
+        (void)m3_error_set(error, M3_STATUS_OUT_OF_RANGE,
+                           "graph node output is absent or out of range");
+        return M3_STATUS_OUT_OF_RANGE;
     }
     *view = &views[value];
     return M3_STATUS_OK;
@@ -102,10 +107,10 @@ static m3_status m3_graph_bind_norm(
     const m3_graph_node_desc *description, m3_tensor_view *views,
     size_t value_count, m3_command *command, m3_error *error)
 {
-    const m3_tensor_view *input;
-    const m3_tensor_view *scale;
+    const m3_tensor_view *input = NULL;
+    const m3_tensor_view *scale = NULL;
     const m3_tensor_view *bias = NULL;
-    m3_tensor_view *output;
+    m3_tensor_view *output = NULL;
     m3_status status = m3_graph_input(
         description->inputs[0], views, value_count, false, &input, error);
 
@@ -205,10 +210,10 @@ static m3_status m3_graph_bind_convolution(
     const m3_graph_node_desc *description, m3_tensor_view *views,
     size_t value_count, m3_command *command, m3_error *error)
 {
-    const m3_tensor_view *input;
-    const m3_tensor_view *weight;
-    const m3_tensor_view *bias;
-    m3_tensor_view *output;
+    const m3_tensor_view *input = NULL;
+    const m3_tensor_view *weight = NULL;
+    const m3_tensor_view *bias = NULL;
+    m3_tensor_view *output = NULL;
     m3_status status = m3_graph_input(
         description->inputs[0], views, value_count, false, &input, error);
 

@@ -486,8 +486,9 @@ m3_status m3_session_create(m3_session **session_output,
           last_uses == NULL)) ||
         (session->node_count != 0U &&
          (session->nodes == NULL || session->commands == NULL))) {
-        status = m3_error_set(error, M3_STATUS_OUT_OF_MEMORY,
-                              "cannot allocate session plan arrays");
+        (void)m3_error_set(error, M3_STATUS_OUT_OF_MEMORY,
+                           "cannot allocate session plan arrays");
+        status = M3_STATUS_OUT_OF_MEMORY;
     } else {
         status = M3_STATUS_OK;
     }

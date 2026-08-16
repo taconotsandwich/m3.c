@@ -8,9 +8,11 @@ static m3_status m3_graph_infer_input(
     const m3_graph *graph, m3_graph_value_id value,
     const m3_tensor_metadata **metadata, m3_error *error)
 {
+    *metadata = NULL;
     if (value == M3_GRAPH_VALUE_NONE || (size_t)value >= graph->value_count) {
-        return m3_error_set(error, M3_STATUS_OUT_OF_RANGE,
-                            "inferred graph input is absent or out of range");
+        (void)m3_error_set(error, M3_STATUS_OUT_OF_RANGE,
+                           "inferred graph input is absent or out of range");
+        return M3_STATUS_OUT_OF_RANGE;
     }
     *metadata = &graph->values[value].metadata;
     return M3_STATUS_OK;
@@ -132,8 +134,8 @@ static m3_status m3_graph_infer_shape(
     const m3_graph *graph, const m3_graph_node_desc *node,
     size_t output_index, m3_graph_value_desc *output, m3_error *error)
 {
-    const m3_tensor_metadata *first;
-    const m3_tensor_metadata *second;
+    const m3_tensor_metadata *first = NULL;
+    const m3_tensor_metadata *second = NULL;
     m3_status status = m3_graph_infer_input(
         graph, node->inputs[0], &first, error);
 
@@ -259,6 +261,11 @@ static m3_status m3_graph_infer_shape(
             output->shape[1] = first->shape[1];
             output->shape[2] = node->parameters.resize.output_length;
         }
+        break;
+    default:
+        status = m3_error_set(error, M3_STATUS_UNSUPPORTED,
+                              "cannot infer unsupported operation kind %d",
+                              (int)node->kind);
         break;
     }
     return status;

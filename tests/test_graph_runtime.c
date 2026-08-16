@@ -167,6 +167,7 @@ void m3_test_graph_validation(m3_test_context *test)
     m3_graph *graph = NULL;
     m3_session *session = NULL;
     m3_graph_value_id input;
+    m3_graph_value_id inferred = M3_GRAPH_VALUE_NONE;
     m3_graph_value_id temporary;
     m3_graph_value_id output;
     m3_error error;
@@ -201,6 +202,24 @@ void m3_test_graph_validation(m3_test_context *test)
                 M3_STATUS_INVALID_ARGUMENT &&
             session == NULL,
         "session compilation rejects read-before-produce atomically");
+    m3_graph_node_desc_init(&node, M3_OP_ADD);
+    node.inputs[1] = input;
+    M3_TEST_EXPECT(
+        test,
+        m3_graph_add_inferred_value(
+            graph, &node, 0U, M3_GRAPH_TEMPORARY, M3_DTYPE_F32,
+            &inferred, NULL) == M3_STATUS_OUT_OF_RANGE &&
+            inferred == M3_GRAPH_VALUE_NONE,
+        "shape inference rejects an absent required input atomically");
+    node.kind = (m3_op_kind)999;
+    node.inputs[0] = input;
+    M3_TEST_EXPECT(
+        test,
+        m3_graph_add_inferred_value(
+            graph, &node, 0U, M3_GRAPH_TEMPORARY, M3_DTYPE_F32,
+            &inferred, NULL) == M3_STATUS_UNSUPPORTED &&
+            inferred == M3_GRAPH_VALUE_NONE,
+        "shape inference rejects an unsupported operation atomically");
     m3_graph_free(graph);
 
     graph = NULL;

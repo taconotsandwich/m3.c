@@ -290,7 +290,7 @@ m3_status m3_graph_add_coreml_partition(
     m3_graph *graph, const m3_coreml_partition_desc *description,
     m3_error *error)
 {
-    m3_graph_node node;
+    m3_graph_node *node;
     m3_status status;
 
     if (graph == NULL || description == NULL ||
@@ -303,31 +303,39 @@ m3_status m3_graph_add_coreml_partition(
         return m3_error_set(error, M3_STATUS_INVALID_ARGUMENT,
                             "Core ML partition description is incomplete");
     }
-    (void)memset(&node, 0, sizeof(node));
-    node.type = M3_GRAPH_NODE_COREML;
-    node.payload.coreml.compiled_model_path =
+    if (graph->node_count == graph->node_capacity &&
+        !m3_graph_grow((void **)&graph->nodes, &graph->node_capacity,
+                       sizeof(*graph->nodes))) {
+        return m3_error_set(error, M3_STATUS_OUT_OF_MEMORY,
+                            "cannot grow graph nodes");
+    }
+    node = &graph->nodes[graph->node_count];
+    (void)memset(node, 0, sizeof(*node));
+    node->type = M3_GRAPH_NODE_COREML;
+    node->payload.coreml.compiled_model_path =
         m3_graph_string_copy(description->compiled_model_path);
-    if (node.payload.coreml.compiled_model_path == NULL) {
+    if (node->payload.coreml.compiled_model_path == NULL) {
         return m3_error_set(error, M3_STATUS_OUT_OF_MEMORY,
                             "cannot copy Core ML model path");
     }
-    node.payload.coreml.input_count = description->input_count;
-    node.payload.coreml.output_count = description->output_count;
+    node->payload.coreml.input_count = description->input_count;
+    node->payload.coreml.output_count = description->output_count;
     status = m3_graph_coreml_copy_side(
         description->inputs, description->input_names,
-        description->input_count, &node.payload.coreml.inputs,
-        &node.payload.coreml.input_names, error);
+        description->input_count, &node->payload.coreml.inputs,
+        &node->payload.coreml.input_names, error);
     if (status == M3_STATUS_OK) {
         status = m3_graph_coreml_copy_side(
             description->outputs, description->output_names,
-            description->output_count, &node.payload.coreml.outputs,
-            &node.payload.coreml.output_names, error);
+            description->output_count, &node->payload.coreml.outputs,
+            &node->payload.coreml.output_names, error);
     }
     if (status == M3_STATUS_OK) {
-        status = m3_graph_append_node(graph, &node, error);
-    }
-    if (status != M3_STATUS_OK) {
-        m3_graph_coreml_dispose(&node.payload.coreml);
+        ++graph->node_count;
+        m3_error_reset(error);
+    } else {
+        m3_graph_coreml_dispose(&node->payload.coreml);
+        (void)memset(node, 0, sizeof(*node));
     }
     return status;
 }

@@ -96,12 +96,12 @@ static m3_status m3_coreml_array(m3_tensor_view *view,
                             m3_dtype_name(view->metadata.dtype));
     }
     data = m3_storage_data(view->storage);
-    if (data == NULL && view->metadata.byte_count != 0U) {
+    if (data == NULL) {
         return m3_error_set(error, M3_STATUS_INTERNAL,
                             "Core ML tensor storage is not host visible");
     }
     array = [[MLMultiArray alloc]
-        initWithDataPointer:data == NULL ? NULL : data + view->byte_offset
+        initWithDataPointer:data + view->byte_offset
                       shape:m3_coreml_shape(view)
                    dataType:data_type
                     strides:m3_coreml_strides(view)
@@ -243,9 +243,16 @@ static m3_status m3_coreml_validate_side(
     size_t index;
 
     for (index = 0U; index < count; ++index) {
-        NSString *name = (__bridge NSString *)names[index];
-        MLFeatureDescription *feature = features[name];
+        NSString *name;
+        MLFeatureDescription *feature;
         size_t other;
+
+        if (names[index] == NULL) {
+            return m3_error_set(error, M3_STATUS_INVALID_ARGUMENT,
+                                "Core ML %s feature name is absent", side);
+        }
+        name = (__bridge NSString *)names[index];
+        feature = features[name];
 
         if ((size_t)values[index] >= value_count || feature == nil ||
             !m3_coreml_description_matches(feature, &views[values[index]])) {
@@ -414,6 +421,10 @@ m3_status m3_coreml_partition_execute(
         if (status != M3_STATUS_OK) {
             return status;
         }
+        if (array == nil) {
+            return m3_error_set(error, M3_STATUS_INTERNAL,
+                                "Core ML input array was not created");
+        }
         inputs[(__bridge NSString *)partition->input_names[index]] =
             [MLFeatureValue featureValueWithMultiArray:array];
     }
@@ -429,6 +440,10 @@ m3_status m3_coreml_partition_execute(
         status = m3_coreml_array(&views[value], &array, error);
         if (status != M3_STATUS_OK) {
             return status;
+        }
+        if (array == nil) {
+            return m3_error_set(error, M3_STATUS_INTERNAL,
+                                "Core ML output array was not created");
         }
         [output_arrays addObject:array];
         backings[(__bridge NSString *)partition->output_names[index]] = array;
