@@ -1,13 +1,15 @@
 # m3.c
 
-`m3.c` is a native C11 inference runtime for the official
-[MiniMaxAI/MiniMax-Music3](https://huggingface.co/MiniMaxAI/MiniMax-Music3)
-model. It runs the complete caption-and-lyrics-to-stereo-waveform pipeline on
-Apple Metal without Python, PyTorch, Diffusers, or a CPU inference fallback.
+`m3.c` is a native C11 inference runtime for macOS. Its model-neutral graph API
+owns tensor metadata, validates topological data flow, infers output shapes,
+reuses unified-memory storage by liveness, and schedules one graph across Apple
+Neural Engine, Metal GPU, and CPU providers in that preference order.
 
-The public API is intentionally small: open a trusted local model snapshot,
-generate an owned waveform, read either planar channel, or write a 44.1 kHz
-stereo IEEE-float WAVE file.
+Music3 is the first complete model adapter. It runs the official
+[MiniMaxAI/MiniMax-Music3](https://huggingface.co/MiniMaxAI/MiniMax-Music3)
+caption-and-lyrics-to-stereo-waveform pipeline without Python, PyTorch, or
+Diffusers. The adapter and the public graph API share the same tensor,
+operation, storage, and provider scheduler; there is no second model runtime.
 
 ## Status
 
@@ -15,8 +17,10 @@ Current version: `0.1.0`
 
 Verified on an Apple M4 Mac with 32 GiB unified memory:
 
-- Strict suite: 174 cases, 2,746 checks, 0 skipped.
-- ASan and UBSan suite: 174 cases, 2,746 checks, 0 skipped.
+- Strict suite: 178 cases, 2,781 checks, 0 skipped.
+- ASan and UBSan suite: 178 cases, 2,781 checks, 0 skipped.
+- Core ML to Metal heterogeneous graph: passed with shared tensor storage.
+- CPU-only graph and liveness planner: passed.
 - Official pinned-weight Metal E2E: passed every generation phase.
 - E2E smoke request: one generated frame, 1,536 samples per channel.
 - Official model revision:
@@ -34,17 +38,52 @@ The runtime implements:
 - Exact post-decode crop, planar assembly, clamping, and WAVE interleaving.
 - Transactional outputs, deterministic RNG state, progress, and cancellation.
 
-Neural operations run on the Metal GPU. The Apple Neural Engine is not used.
-CPU work is limited to orchestration, validation, sampling, weight staging, and
-bounded storage transfers.
+The official Music3 snapshot contains Safetensors, not compiled Core ML
+partitions, so its current neural path selects Metal. A model adapter can add
+precompiled `.mlmodelc` partitions to the same graph; those partitions load
+with Core ML `CPUAndNeuralEngine`, regular supported nodes select Metal, and
+remaining regular nodes select CPU. Core ML makes the final per-operation ANE
+placement decision and may use CPU for operations the Neural Engine cannot
+run.
+
+## Runtime architecture
+
+The graph is supplied in topological order. Inputs, constants, temporaries,
+and outputs have explicit dtypes and ranks; `m3_graph_add_inferred_value`
+derives output shapes for regular operations. Session compilation rejects
+read-before-produce and multiple-producer graphs, validates every lowered
+operation, performs interval liveness analysis, and allocates reusable storage
+slots before execution.
+
+```mermaid
+flowchart LR
+    A["Model adapter"] --> B["Normalized m3 graph"]
+    B --> C["Shape and dtype validation"]
+    C --> D["Liveness and unified-memory plan"]
+    D --> E{"Precompiled Core ML partition?"}
+    E -->|Yes| F["Core ML: Neural Engine preferred"]
+    E -->|No| G{"Metal supports node?"}
+    G -->|Yes| H["Metal GPU command batch"]
+    G -->|No| I["CPU reference provider"]
+    F --> J["Shared tensor storage"]
+    H --> J
+    I --> J
+    J --> K["Next graph partition"]
+```
+
+Core ML partitions are explicit packaged subgraphs rather than an automatic
+second translation of every operator. That keeps one graph, one ownership
+plan, and one scheduler while allowing adapters with compiled Apple Neural
+Engine assets to use them directly.
 
 ## Requirements
 
-- macOS with a Metal-capable GPU.
+- macOS. Metal execution requires a Metal-capable GPU; Neural Engine execution
+  requires a supported Apple-silicon Mac and a compatible Core ML partition.
 - Apple Clang with C11 and Objective-C ARC support.
 - GNU Make.
 - Enough local storage for the selected official model snapshot.
-- Substantial unified memory or swap for official-weight inference.
+- Substantial unified memory or swap for the official Music3 adapter.
 
 The full official pipeline was verified on a 32 GiB M4. Smaller-memory systems
 may fail the runtime's allocation preflight or experience heavy swap use.
@@ -74,6 +113,81 @@ Remove generated build products:
 ```sh
 make clean
 ```
+
+## General graph API
+
+The public graph/session API is declared in `include/m3.h`. This minimal graph
+multiplies two F32 vectors. The constant and graph can be released after the
+session is compiled because the session owns its plan and constant copy.
+
+```c
+#include "m3.h"
+
+int main(void)
+{
+    const uint64_t shape[] = {4};
+    const float scale[] = {2, 2, 2, 2};
+    const float input[] = {1, 2, 3, 4};
+    float output[4];
+    m3_graph_value_desc value;
+    m3_graph_node_desc node;
+    m3_graph_value_id x, c, y;
+    m3_graph *graph = NULL;
+    m3_session *session = NULL;
+    m3_error error;
+
+    m3_graph_create(&graph, &error);
+    m3_graph_value_desc_init(
+        &value, M3_GRAPH_INPUT, M3_DTYPE_F32, 1, shape);
+    m3_graph_add_value(graph, &value, &x, &error);
+    value.role = M3_GRAPH_CONSTANT;
+    m3_graph_add_value(graph, &value, &c, &error);
+    m3_graph_set_constant(graph, c, scale, sizeof(scale), &error);
+
+    m3_graph_node_desc_init(&node, M3_OP_MUL);
+    node.inputs[0] = x;
+    node.inputs[1] = c;
+    m3_graph_add_inferred_value(
+        graph, &node, 0, M3_GRAPH_OUTPUT, M3_DTYPE_F32, &y, &error);
+    node.outputs[0] = y;
+    m3_graph_add_node(graph, &node, &error);
+
+    m3_session_create(&session, graph, NULL, &error);
+    m3_graph_free(graph);
+    m3_session_write_input(session, x, input, sizeof(input), &error);
+    m3_session_run(session, &error);
+    m3_session_read_output(session, y, output, sizeof(output), &error);
+    m3_session_free(session);
+    return 0;
+}
+```
+
+The default session enables Neural Engine, Metal, and CPU. Disable providers
+with `m3_session_options` when a deployment needs a strict subset. A Core ML
+node binds named graph values to a `.mlmodel`, `.mlpackage`, or compiled
+`.mlmodelc` through `m3_graph_add_coreml_partition`. F32, F16, and I32 Core ML
+multi-arrays are supported; BF16 stays on the regular Metal/CPU path.
+
+Regular-node input and output positions are fixed:
+
+| Operations | Inputs | Outputs |
+| --- | --- | --- |
+| COPY, CAST, SOFTMAX, NEAREST_RESIZE1D, TANH | input | output |
+| ADD, MUL, MATMUL, GATED_SILU | left, right | output |
+| EMBEDDING | IDs, table | output |
+| LINEAR | input, weight, optional bias | output |
+| RMS_NORM | input, scale | output |
+| LAYER_NORM | input, scale, optional bias | output |
+| ROPE | input, cosines, sines | output |
+| ATTENTION | query, key, value, optional mask | output |
+| TOP_K | logits | F32 values, I32 indices |
+| CATEGORICAL | probabilities, uniforms | I32 output |
+| CONV1D, CONV_TRANSPOSE1D | input, weight, optional bias | output |
+| SNAKE1D | input, alpha | output |
+
+Unused and optional positions are `M3_GRAPH_VALUE_NONE`. Operator parameters
+such as epsilon, attention scale, top-k `k`, convolution geometry, and resize
+length live in `m3_graph_node_desc.parameters`.
 
 The Apple arm64 driver does not accept standalone `-fsanitize=leak`, but its
 ASan runtime supports integrated leak checking. Run the same sanitizer suite
@@ -212,6 +326,7 @@ After `make`, compile the example against the static library:
 ```sh
 clang -std=c11 -O3 -Iinclude example.c build/libm3.a -lm \
   -framework Foundation \
+  -framework CoreML \
   -framework Metal \
   -framework MetalPerformanceShaders \
   -framework MetalPerformanceShadersGraph \
@@ -258,8 +373,10 @@ samples, exact WAVE metadata and interleaving, and deterministic output hashes.
 ## Measured performance
 
 The current software optimization pass was measured on the same fanless M4
-Mac, exact pinned weights, one-frame request, seed `20260815`, and sequence `0`.
-Each retained change preserved the two output hashes bit-for-bit.
+MacBook with 32 GiB unified memory, placed on an MxSW2-hi Cooling Stand, using
+the exact pinned weights, a one-frame request, seed `20260815`, and sequence
+`0`. The stand is part of the recorded benchmark environment, not a runtime
+requirement. Each retained change preserved the two output hashes bit-for-bit.
 
 | Revision | Total | Semantic | Flow | Decode |
 | --- | ---: | ---: | ---: | ---: |
@@ -283,16 +400,46 @@ requires those exact official dtypes. Running a separately converted FP16
 checkpoint would require one deliberate model-schema/numerical-contract change;
 it is not silently accepted as the official model.
 
+## Hardware optimization DAG
+
+Hardware placement follows correctness and measurement. Neural Engine is the
+first scheduling preference only for explicit Core ML partitions; regular
+operators then select Metal when supported and CPU otherwise. Core ML retains
+the final choice between Neural Engine and CPU for a partition.
+
+```mermaid
+flowchart TD
+    A["Canonical graph and representative workload"] --> B["Exact output and ownership oracle"]
+    B --> C["Software pass: shapes, liveness, batching, and data layout"]
+    C --> D["Measure compute, transfer, memory, and launch costs"]
+    D --> E{"Explicit Core ML partition is compatible and faster?"}
+    E -->|Yes| F["Core ML: Neural Engine preferred"]
+    E -->|No| G{"Metal kernel is supported and faster?"}
+    G -->|Yes| H["Metal GPU"]
+    G -->|No| I["CPU reference provider"]
+    F --> J["End-to-end parity, memory, and performance gates"]
+    H --> J
+    I --> J
+    J --> K{"A measured bottleneck remains?"}
+    K -->|Yes| C
+    K -->|No| L["Retain the simplest measured plan"]
+```
+
+Future provider work should therefore begin with model-owned Core ML
+partitions and measured transfer boundaries, then continue with Metal kernel
+tuning. CPU staging or execution parallelism is added only when profiling
+shows CPU work dominates; dependent model layers remain ordered.
+
 ## Public API
 
-The complete public surface is declared in [`include/m3.h`](include/m3.h):
+The complete public surface is declared in [`include/m3.h`](include/m3.h) and
+has two layers:
 
-- `m3_music3_engine_open` and `m3_music3_engine_free`
-- `m3_music3_generate`
-- `m3_music3_output_get_info`
-- `m3_music3_output_read_channel_f32`
-- `m3_music3_output_write_wav`
-- `m3_music3_output_free`
+- The model-neutral graph/session layer creates graph values and regular or
+  Core ML nodes, compiles a provider and liveness plan, writes inputs, runs the
+  session, reads outputs, and exposes the selected provider per node.
+- The Music3 adapter opens the exact official model, generates waveform
+  outputs, reads planar channels, and writes stereo WAVE files.
 
 Generation progress is reported as monotonic phase-local counters covering
 preparation, semantic weights, semantic decoding, flow weights, flow solving,
