@@ -14,6 +14,8 @@ BUILD_DIR = build
 SANITIZER_BUILD_DIR = build-sanitize
 LIBRARY = $(BUILD_DIR)/libm3.a
 TEST_BINARY = $(BUILD_DIR)/test_m3
+BENCHMARK_BINARY = $(BUILD_DIR)/music3-benchmark
+BENCHMARK_SOURCE = tools/m3_music3_benchmark.c
 LIBRARY_C_SOURCES := $(sort $(wildcard src/*.c))
 LIBRARY_OBJECTIVE_C_SOURCES := $(sort $(wildcard src/*.m))
 TEST_SOURCES := $(sort $(wildcard tests/*.c))
@@ -30,9 +32,11 @@ APPLE_FRAMEWORKS = -framework Foundation -framework Metal \
 	-framework MetalPerformanceShadersGraph -framework Accelerate
 endif
 
-.PHONY: all clean test test-sanitize
+.PHONY: all benchmark clean test test-sanitize
 
 all: $(LIBRARY)
+
+benchmark: $(BENCHMARK_BINARY)
 
 test: $(TEST_BINARY)
 	$(TEST_BINARY)
@@ -66,6 +70,10 @@ $(LIBRARY): $(LIBRARY_OBJECTS)
 $(TEST_BINARY): $(TEST_OBJECTS) $(LIBRARY)
 	$(CC) $(CFLAGS) $(LDFLAGS) $(TEST_OBJECTS) $(LIBRARY) $(LDLIBS) \
 		$(APPLE_FRAMEWORKS) -o $@
+
+$(BENCHMARK_BINARY): $(BENCHMARK_SOURCE) $(LIBRARY) | $(BUILD_DIR)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(LDFLAGS) $(BENCHMARK_SOURCE) \
+		$(LIBRARY) $(LDLIBS) $(APPLE_FRAMEWORKS) -o $@
 
 clean:
 	rm -rf build build-sanitize
