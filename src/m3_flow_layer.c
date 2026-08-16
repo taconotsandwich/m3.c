@@ -167,142 +167,85 @@ static m3_status m3_flow_layer_transform_views(
     return status;
 }
 
-static m3_status m3_flow_layer_attention(
+static m3_status m3_flow_layer_prepare_attention(
     m3_flow_run *run, const m3_flow_layer_weights *weights,
     m3_flow_layer_views *views, m3_error *error)
 {
-    m3_command commands[3] = {0};
-    m3_status status;
+    m3_command commands[6] = {0};
 
     commands[0].kind = M3_OP_LAYER_NORM;
     commands[0].descriptor.layer_norm = (m3_op_layer_norm){
         &views->hidden, weights->norm1_scale, weights->norm1_bias,
         &views->normalized, run->config->layer_norm_epsilon
     };
-    status = m3_command_executor_execute(
-        &run->executor, commands, 1U, error);
-    m3_flow_linear(&commands[0], &views->normalized, weights->query,
+    m3_flow_linear(&commands[1], &views->normalized, weights->query,
                    NULL, &views->query);
-    m3_flow_linear(&commands[1], &views->normalized, weights->key,
+    m3_flow_linear(&commands[2], &views->normalized, weights->key,
                    NULL, &views->key);
-    m3_flow_linear(&commands[2], &views->normalized, weights->value,
+    m3_flow_linear(&commands[3], &views->normalized, weights->value,
                    NULL, &views->value);
-    if (status == M3_STATUS_OK) {
-        status = m3_command_executor_execute(
-            &run->executor, commands, 3U, error);
-    }
-    (void)memset(commands, 0, sizeof(commands));
-    commands[0].kind = M3_OP_ROPE;
-    commands[0].descriptor.rope = (m3_op_rope){
+    commands[4].kind = M3_OP_ROPE;
+    commands[4].descriptor.rope = (m3_op_rope){
         &views->query_heads, &views->cosines, &views->sines,
         &views->query_rotary, 0U, run->config->rotary_dimension,
         M3_ROPE_HALF_SPLIT
     };
-    commands[1].kind = M3_OP_ROPE;
-    commands[1].descriptor.rope = (m3_op_rope){
+    commands[5].kind = M3_OP_ROPE;
+    commands[5].descriptor.rope = (m3_op_rope){
         &views->key_heads, &views->cosines, &views->sines,
         &views->key_rotary, 0U, run->config->rotary_dimension,
         M3_ROPE_HALF_SPLIT
     };
-    if (status == M3_STATUS_OK) {
-        status = m3_command_executor_execute(
-            &run->executor, commands, 2U, error);
-    }
-    (void)memset(commands, 0, sizeof(commands));
+    return m3_command_executor_execute(
+        &run->executor, commands, 6U, error);
+}
+
+static m3_status m3_flow_layer_finish(
+    m3_flow_run *run, const m3_flow_layer_weights *weights,
+    m3_flow_layer_views *views, m3_error *error)
+{
+    m3_command commands[9] = {0};
+
     commands[0].kind = M3_OP_ATTENTION;
     commands[0].descriptor.attention = (m3_op_attention){
         &views->query_rotary, &views->key_rotary, &views->value_heads,
         NULL, &views->attention,
         1.0F / sqrtf((float)run->config->head_dimension), 0, false
     };
-    if (status == M3_STATUS_OK) {
-        status = m3_command_executor_execute(
-            &run->executor, commands, 1U, error);
-    }
-    return status;
-}
-
-static m3_status m3_flow_layer_consume_attention(
-    m3_flow_run *run, const m3_flow_layer_weights *weights,
-    m3_flow_layer_views *views, m3_error *error)
-{
-    m3_command command = {0};
-    m3_status status;
-
-    command.kind = M3_OP_COPY;
-    command.descriptor.copy = (m3_op_unary){
+    commands[1].kind = M3_OP_COPY;
+    commands[1].descriptor.copy = (m3_op_unary){
         &views->attention_sequence, &views->reorder
     };
-    status = m3_command_executor_execute(
-        &run->executor, &command, 1U, error);
-    m3_flow_linear(&command, &views->merged, weights->attention_out,
+    m3_flow_linear(&commands[2], &views->merged, weights->attention_out,
                    NULL, &views->hidden_temp);
-    if (status == M3_STATUS_OK) {
-        status = m3_command_executor_execute(
-            &run->executor, &command, 1U, error);
-    }
-    (void)memset(&command, 0, sizeof(command));
-    command.kind = M3_OP_ADD;
-    command.descriptor.add = (m3_op_binary){
+    commands[3].kind = M3_OP_ADD;
+    commands[3].descriptor.add = (m3_op_binary){
         &views->hidden, &views->hidden_temp, &views->hidden
     };
-    if (status == M3_STATUS_OK) {
-        status = m3_command_executor_execute(
-            &run->executor, &command, 1U, error);
-    }
-    return status;
-}
-
-static m3_status m3_flow_layer_feed_forward(
-    m3_flow_run *run, const m3_flow_layer_weights *weights,
-    m3_flow_layer_views *views, m3_error *error)
-{
-    m3_command command = {0};
-    m3_status status;
-
-    command.kind = M3_OP_LAYER_NORM;
-    command.descriptor.layer_norm = (m3_op_layer_norm){
+    commands[4].kind = M3_OP_LAYER_NORM;
+    commands[4].descriptor.layer_norm = (m3_op_layer_norm){
         &views->hidden, weights->norm2_scale, weights->norm2_bias,
         &views->normalized, run->config->layer_norm_epsilon
     };
-    status = m3_command_executor_execute(
-        &run->executor, &command, 1U, error);
-    m3_flow_linear(&command, &views->normalized,
+    m3_flow_linear(&commands[5], &views->normalized,
                    weights->feed_forward_in,
                    weights->feed_forward_in_bias,
                    &views->feed_forward);
-    if (status == M3_STATUS_OK) {
-        status = m3_command_executor_execute(
-            &run->executor, &command, 1U, error);
-    }
-    (void)memset(&command, 0, sizeof(command));
-    command.kind = M3_OP_GATED_SILU;
-    command.descriptor.gated_silu = (m3_op_binary){
+    commands[6].kind = M3_OP_GATED_SILU;
+    commands[6].descriptor.gated_silu = (m3_op_binary){
         &views->feed_forward_gate, &views->feed_forward_first,
         &views->gated
     };
-    if (status == M3_STATUS_OK) {
-        status = m3_command_executor_execute(
-            &run->executor, &command, 1U, error);
-    }
-    m3_flow_linear(&command, &views->gated,
+    m3_flow_linear(&commands[7], &views->gated,
                    weights->feed_forward_out,
                    weights->feed_forward_out_bias,
                    &views->hidden_temp);
-    if (status == M3_STATUS_OK) {
-        status = m3_command_executor_execute(
-            &run->executor, &command, 1U, error);
-    }
-    (void)memset(&command, 0, sizeof(command));
-    command.kind = M3_OP_ADD;
-    command.descriptor.add = (m3_op_binary){
+    commands[8].kind = M3_OP_ADD;
+    commands[8].descriptor.add = (m3_op_binary){
         &views->hidden, &views->hidden_temp, &views->hidden
     };
-    if (status == M3_STATUS_OK) {
-        status = m3_command_executor_execute(
-            &run->executor, &command, 1U, error);
-    }
-    return status;
+    return m3_command_executor_execute(
+        &run->executor, commands, 9U, error);
 }
 
 m3_status m3_flow_transformer_layer(
@@ -318,15 +261,11 @@ m3_status m3_flow_transformer_layer(
             run, &views, length, error);
     }
     if (status == M3_STATUS_OK) {
-        status = m3_flow_layer_attention(
+        status = m3_flow_layer_prepare_attention(
             run, weights, &views, error);
     }
     if (status == M3_STATUS_OK) {
-        status = m3_flow_layer_consume_attention(
-            run, weights, &views, error);
-    }
-    if (status == M3_STATUS_OK) {
-        status = m3_flow_layer_feed_forward(
+        status = m3_flow_layer_finish(
             run, weights, &views, error);
     }
     return status;
