@@ -28,6 +28,7 @@ DEPENDENCY_FILES = $(LIBRARY_OBJECTS:.o=.d) $(TEST_OBJECTS:.o=.d)
 ifneq ($(strip $(LIBRARY_OBJECTIVE_C_SOURCES)),)
 OBJECTIVE_C_FLAGS = -fobjc-arc
 APPLE_FRAMEWORKS = -framework Foundation -framework Metal \
+	-framework CoreML \
 	-framework MetalPerformanceShaders \
 	-framework MetalPerformanceShadersGraph -framework Accelerate
 endif

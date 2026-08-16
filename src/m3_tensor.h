@@ -9,15 +9,6 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define M3_TENSOR_MAX_RANK 8
-
-typedef enum {
-    M3_DTYPE_F32 = 0,
-    M3_DTYPE_F16,
-    M3_DTYPE_BF16,
-    M3_DTYPE_I32
-} m3_dtype;
-
 typedef struct {
     m3_dtype dtype;
     uint8_t rank;

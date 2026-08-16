@@ -11,34 +11,6 @@
 #include <stddef.h>
 #include <stdint.h>
 
-typedef enum {
-    M3_OP_COPY = 0,
-    M3_OP_CAST,
-    M3_OP_ADD,
-    M3_OP_MUL,
-    M3_OP_EMBEDDING,
-    M3_OP_MATMUL,
-    M3_OP_LINEAR,
-    M3_OP_RMS_NORM,
-    M3_OP_LAYER_NORM,
-    M3_OP_ROPE,
-    M3_OP_ATTENTION,
-    M3_OP_GATED_SILU,
-    M3_OP_SOFTMAX,
-    M3_OP_TOP_K,
-    M3_OP_CATEGORICAL,
-    M3_OP_CONV1D,
-    M3_OP_CONV_TRANSPOSE1D,
-    M3_OP_NEAREST_RESIZE1D,
-    M3_OP_SNAKE1D,
-    M3_OP_TANH
-} m3_op_kind;
-
-typedef enum {
-    M3_ROPE_HALF_SPLIT = 0,
-    M3_ROPE_INTERLEAVED
-} m3_rope_mode;
-
 typedef struct {
     const m3_tensor_view *input;
     m3_tensor_view *output;

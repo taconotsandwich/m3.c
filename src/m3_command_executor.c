@@ -2,6 +2,8 @@
 
 #include "m3_runtime_workspace.h"
 
+#include "m3_provider.h"
+
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -56,6 +58,7 @@ m3_status m3_command_executor_execute(m3_command_executor *executor,
                                       m3_error *error)
 {
     m3_scratch_arena arena;
+    m3_provider_kind provider;
     size_t required = 0U;
     m3_status status;
 
@@ -77,6 +80,13 @@ m3_status m3_command_executor_execute(m3_command_executor *executor,
     if (status != M3_STATUS_OK) {
         return status;
     }
-    return m3_backend_execute(executor->backend, commands, command_count,
-                              &arena, error);
+    status = m3_provider_select_regular(executor->backend, true, true,
+                                        commands, command_count, &provider,
+                                        error);
+    if (status != M3_STATUS_OK) {
+        return status;
+    }
+    return m3_provider_execute_regular(executor->backend, provider,
+                                       commands, command_count, &arena,
+                                       error);
 }

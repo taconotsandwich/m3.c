@@ -15,6 +15,7 @@
 #include "cases/host_utilities.inc"
 #include "cases/wav_output.inc"
 #include "cases/runtime_workspace.inc"
+#include "cases/general_runtime.inc"
 #include "cases/guided_sampling.inc"
 #include "cases/transformer_precision.inc"
 #include "cases/metal_operations.inc"
