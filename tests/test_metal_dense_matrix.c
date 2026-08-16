@@ -431,6 +431,88 @@ static bool m3_test_metal_linear_precision(
     return true;
 }
 
+static bool m3_test_metal_dense_tile_edges(
+    m3_test_context *test, m3_metal_dense_fixture *fixture)
+{
+    const uint64_t left_shape[] = {9U, 17U};
+    const uint64_t right_shape[] = {17U, 10U};
+    const uint64_t weight_shape[] = {10U, 17U};
+    const uint64_t bias_shape[] = {10U};
+    const uint64_t output_shape[] = {9U, 10U};
+    float left_values[9U * 17U];
+    float right_values[17U * 10U];
+    float weight_values[10U * 17U];
+    float bias_values[10U];
+    float zeros[9U * 10U] = {0};
+    m3_metal_dense_view left;
+    m3_metal_dense_view right;
+    m3_metal_dense_view weight;
+    m3_metal_dense_view bias;
+    m3_metal_dense_view output = {0};
+    m3_command host;
+    m3_command metal;
+    m3_error error;
+    size_t index;
+
+    for (index = 0U; index < 9U * 17U; ++index) {
+        left_values[index] =
+            (float)((int32_t)(index % 11U) - 5) * 0.125F;
+    }
+    for (index = 0U; index < 17U * 10U; ++index) {
+        right_values[index] =
+            (float)((int32_t)(index % 13U) - 6) * 0.0625F;
+    }
+    for (index = 0U; index < 10U * 17U; ++index) {
+        size_t feature = index / 17U;
+        size_t input_feature = index % 17U;
+
+        weight_values[index] =
+            right_values[input_feature * 10U + feature];
+    }
+    for (index = 0U; index < 10U; ++index) {
+        bias_values[index] = (float)((int32_t)index - 4) * 0.25F;
+    }
+    M3_TEST_EXPECT(test,
+                   m3_metal_dense_tensor(
+                       fixture, &left, M3_DTYPE_F32, 2U, left_shape,
+                       left_values) &&
+                       m3_metal_dense_tensor(
+                           fixture, &right, M3_DTYPE_F32, 2U,
+                           right_shape, right_values) &&
+                       m3_metal_dense_tensor(
+                           fixture, &weight, M3_DTYPE_F32, 2U,
+                           weight_shape, weight_values) &&
+                       m3_metal_dense_tensor(
+                           fixture, &bias, M3_DTYPE_F32, 1U, bias_shape,
+                           bias_values) &&
+                       m3_metal_dense_tensor(
+                           fixture, &output, M3_DTYPE_F32, 2U,
+                           output_shape, zeros),
+                   "create partial multi-tile Metal matrices");
+    if (output.host.storage == NULL) {
+        return false;
+    }
+    host = m3_test_metal_matmul_command(
+        &left.host, &right.host, &output.host);
+    metal = m3_test_metal_matmul_command(
+        &left.metal, &right.metal, &output.metal);
+    M3_TEST_EXPECT(test,
+                   m3_metal_dense_execute(
+                       fixture, &host, &metal, 1U, &error) &&
+                       m3_metal_dense_equal(&output),
+                   "Metal matmul matches host across partial tiles");
+    host = m3_test_metal_linear_command(
+        &left.host, &weight.host, &bias.host, &output.host);
+    metal = m3_test_metal_linear_command(
+        &left.metal, &weight.metal, &bias.metal, &output.metal);
+    M3_TEST_EXPECT(test,
+                   m3_metal_dense_execute(
+                       fixture, &host, &metal, 1U, &error) &&
+                       m3_metal_dense_equal(&output),
+                   "Metal linear matches host across partial tiles");
+    return true;
+}
+
 void m3_test_metal_dense_matrix(m3_test_context *test)
 {
     m3_metal_dense_fixture fixture;
@@ -442,7 +524,8 @@ void m3_test_metal_dense_matrix(m3_test_context *test)
         !m3_test_metal_matmul_rounding(test, &fixture) ||
         !m3_test_metal_matmul_zero_inner(test, &fixture) ||
         !m3_test_metal_linear_strided(test, &fixture) ||
-        !m3_test_metal_linear_precision(test, &fixture)) {
+        !m3_test_metal_linear_precision(test, &fixture) ||
+        !m3_test_metal_dense_tile_edges(test, &fixture)) {
         m3_metal_dense_fixture_dispose(&fixture);
         return;
     }

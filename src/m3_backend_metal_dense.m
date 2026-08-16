@@ -169,6 +169,36 @@ static m3_status m3_metal_dense_require(
     return M3_STATUS_OK;
 }
 
+static m3_status m3_metal_dense_dispatch_matrix(
+    id<MTLComputeCommandEncoder> encoder,
+    id<MTLComputePipelineState> pipeline, uint64_t columns,
+    uint64_t rows, m3_error *error)
+{
+    const NSUInteger tile = 8U;
+    NSUInteger group_columns;
+    NSUInteger group_rows;
+
+    if (columns == 0U || rows == 0U) {
+        return M3_STATUS_OK;
+    }
+    if (encoder == nil || pipeline == nil) {
+        return m3_error_set(error, M3_STATUS_INTERNAL,
+                            "Metal dispatch resources are unavailable");
+    }
+    if (pipeline.maxTotalThreadsPerThreadgroup < tile * tile) {
+        return m3_error_set(error, M3_STATUS_INTERNAL,
+                            "Metal dense pipeline has no tile capacity");
+    }
+    group_columns = (NSUInteger)(columns / tile +
+                                 (columns % tile != 0U ? 1U : 0U));
+    group_rows = (NSUInteger)(rows / tile +
+                              (rows % tile != 0U ? 1U : 0U));
+    [encoder setComputePipelineState:pipeline];
+    [encoder dispatchThreadgroups:MTLSizeMake(group_columns, group_rows, 1U)
+             threadsPerThreadgroup:MTLSizeMake(tile, tile, 1U)];
+    return M3_STATUS_OK;
+}
+
 static m3_status m3_metal_encode_embedding(
     const m3_metal_context *context,
     id<MTLComputeCommandEncoder> encoder, const m3_op_embedding *op,
@@ -252,7 +282,8 @@ static m3_status m3_metal_encode_matmul(
     m3_metal_dense_bind_view(encoder, op->left, 0U, 3U);
     m3_metal_dense_bind_view(encoder, op->right, 1U, 4U);
     m3_metal_dense_bind_view(encoder, op->output, 2U, 5U);
-    return m3_metal_dispatch_1d(encoder, pipeline, work, error);
+    return m3_metal_dense_dispatch_matrix(
+        encoder, pipeline, columns, rows, error);
 }
 
 static void m3_metal_dense_bind_optional(
@@ -311,7 +342,12 @@ static m3_status m3_metal_encode_linear(
         encoder, op->bias, op->output, 2U, 6U);
     m3_metal_dense_bind_view(encoder, op->output, 3U, 7U);
     [encoder setBytes:&has_bias length:sizeof(has_bias) atIndex:8U];
-    return m3_metal_dispatch_1d(encoder, pipeline, work, error);
+    return m3_metal_dense_dispatch_matrix(
+        encoder, pipeline,
+        op->weight->metadata.shape[0],
+        (uint64_t)op->output->metadata.element_count /
+            op->weight->metadata.shape[0],
+        error);
 }
 
 static m3_status m3_metal_encode_rms_norm(
