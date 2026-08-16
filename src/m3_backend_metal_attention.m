@@ -94,7 +94,7 @@ NSString *m3_metal_source_attention(void)
             "  }\n"
             "  return sum;\n"
             "}\n";
-    NSString *kernel =
+    NSString *kernel_head =
         @"kernel void m3_attention(\n"
             "    device const uchar* query_data [[buffer(0)]],\n"
             "    device const uchar* key_data [[buffer(1)]],\n"
@@ -102,10 +102,17 @@ NSString *m3_metal_source_attention(void)
             "    device const uchar* mask_data [[buffer(3)]],\n"
             "    device uchar* output_data [[buffer(4)]],\n"
             "    constant M3AttentionParameters& p [[buffer(5)]],\n"
-            "    uint gid [[thread_position_in_grid]]) {\n"
+            "    uint3 group_position [[threadgroup_position_in_grid]],\n"
+            "    uint3 thread_position [[thread_position_in_threadgroup]],\n"
+            "    uint3 threads_per_group [[threads_per_threadgroup]]) {\n"
+            "  threadgroup float shared_maximum;\n"
+            "  threadgroup float shared_denominator;\n"
+            "  threadgroup ulong shared_positive_infinities;\n"
+            "  threadgroup float probabilities[64];\n"
             "  ulong depth = p.query.shape[3];\n"
             "  ulong rows = p.query.element_count / depth;\n"
-            "  ulong row = ulong(gid);\n"
+            "  uint tid = thread_position.x;\n"
+            "  ulong row = ulong(group_position.x);\n"
             "  if (row >= rows) return;\n"
             "  ulong query_count = p.query.shape[2];\n"
             "  ulong query_heads = p.query.shape[1];\n"
@@ -129,60 +136,95 @@ NSString *m3_metal_source_attention(void)
             "        p, batch, query_head, query);\n"
             "  float positive_infinity = as_type<float>(0x7f800000u);\n"
             "  float negative_infinity = as_type<float>(0xff800000u);\n"
-            "  float maximum = negative_infinity;\n"
-            "  ulong positive_infinities = 0ul;\n"
-            "  for (ulong key = 0ul; key < key_count; ++key) {\n"
-            "    float score = m3_attention_score(query_data, key_data, "
+            "  ";
+    NSString *kernel_tail =
+        @"if (tid == 0u) {\n"
+            "    float maximum = negative_infinity;\n"
+            "    ulong positive_infinities = 0ul;\n"
+            "    for (ulong key = 0ul; key < key_count; ++key) {\n"
+            "      float score = m3_attention_score(query_data, key_data, "
             "mask_data, p, query_base, keys_base, mask_base, query, "
             "key);\n"
-            "    if (score > maximum) maximum = score;\n"
-            "    if (score == positive_infinity) ++positive_infinities;\n"
-            "  }\n"
-            "  float denominator = 0.0f;\n"
-            "  if (maximum != negative_infinity && "
-            "maximum != positive_infinity) {\n"
-            "    for (ulong key = 0ul; key < key_count; ++key) {\n"
-            "      float score = m3_attention_score("
-            "query_data, key_data, mask_data, p, query_base, "
-            "keys_base, mask_base, query, key);\n"
-            "      float exponential = exp(score - maximum);\n"
-            "      denominator = denominator + exponential;\n"
+            "      if (score > maximum) maximum = score;\n"
+            "      if (score == positive_infinity) ++positive_infinities;\n"
             "    }\n"
-            "  }\n"
-            "  for (ulong channel = 0ul; channel < depth; ++channel) {\n"
-            "    float sum = 0.0f;\n"
-            "    if (maximum != negative_infinity) {\n"
+            "    float denominator = 0.0f;\n"
+            "    if (maximum != negative_infinity && "
+            "maximum != positive_infinity) {\n"
             "      for (ulong key = 0ul; key < key_count; ++key) {\n"
             "        float score = m3_attention_score("
             "query_data, key_data, mask_data, p, query_base, "
             "keys_base, mask_base, query, key);\n"
-            "        float probability;\n"
-            "        if (maximum == positive_infinity) {\n"
-            "          probability = score == positive_infinity\n"
-            "              ? 1.0f / float(positive_infinities) : 0.0f;\n"
-            "        } else {\n"
-            "          probability = exp(score - maximum) / denominator;\n"
-            "        }\n"
-            "        probability = "
-            "m3_round_float(p.query.dtype, probability);\n"
-            "        ulong value_offset = values_base + "
-            "key * p.value.byte_strides[2] + "
-            "channel * p.value.byte_strides[3];\n"
-            "        float value = "
-            "m3_load_float(value_data + value_offset, p.value.dtype);\n"
-            "        float product = probability * value;\n"
-            "        sum = sum + product;\n"
+            "        float exponential = exp(score - maximum);\n"
+            "        denominator = denominator + exponential;\n"
             "      }\n"
             "    }\n"
-            "    ulong output_offset = "
-            "m3_view_contiguous_offset(p.output, row * depth + channel);\n"
-            "    m3_store_float(output_data + output_offset, "
+            "    shared_maximum = maximum;\n"
+            "    shared_denominator = denominator;\n"
+            "    shared_positive_infinities = positive_infinities;\n"
+            "  }\n"
+            "  threadgroup_barrier(mem_flags::mem_threadgroup);\n"
+            "  float maximum = shared_maximum;\n"
+            "  float denominator = shared_denominator;\n"
+            "  ulong positive_infinities = shared_positive_infinities;\n"
+            "  ulong thread_count = ulong(threads_per_group.x);\n"
+            "  for (ulong channel_start = 0ul; channel_start < depth;\n"
+            "       channel_start += thread_count) {\n"
+            "    ulong channel = channel_start + ulong(tid);\n"
+            "    float sum = 0.0f;\n"
+            "    if (maximum != negative_infinity) {\n"
+            "      for (ulong key_start = 0ul; key_start < key_count;\n"
+            "           key_start += 64ul) {\n"
+            "        ulong block_count = min(64ul, key_count - key_start);\n"
+            "        if (tid == 0u) {\n"
+            "          for (ulong local = 0ul; local < block_count;\n"
+            "               ++local) {\n"
+            "            ulong key = key_start + local;\n"
+            "            float score = m3_attention_score("
+            "query_data, key_data, mask_data, p, query_base, "
+            "keys_base, mask_base, query, key);\n"
+            "            float probability;\n"
+            "            if (maximum == positive_infinity) {\n"
+            "              probability = score == positive_infinity\n"
+            "                ? 1.0f / float(positive_infinities) : 0.0f;\n"
+            "            } else {\n"
+            "              probability =\n"
+            "                exp(score - maximum) / denominator;\n"
+            "            }\n"
+            "            probabilities[local] =\n"
+            "              m3_round_float(p.query.dtype, probability);\n"
+            "          }\n"
+            "        }\n"
+            "        threadgroup_barrier(mem_flags::mem_threadgroup);\n"
+            "        if (channel < depth) {\n"
+            "          for (ulong local = 0ul; local < block_count;\n"
+            "               ++local) {\n"
+            "            ulong key = key_start + local;\n"
+            "            ulong value_offset = values_base + "
+            "key * p.value.byte_strides[2] + "
+            "channel * p.value.byte_strides[3];\n"
+            "            float value = "
+            "m3_load_float(value_data + value_offset, p.value.dtype);\n"
+            "            float product = probabilities[local] * value;\n"
+            "            sum = sum + product;\n"
+            "          }\n"
+            "        }\n"
+            "        threadgroup_barrier(mem_flags::mem_threadgroup);\n"
+            "      }\n"
+            "    }\n"
+            "    if (channel < depth) {\n"
+            "      ulong output_offset = m3_view_contiguous_offset(\n"
+            "        p.output, row * depth + channel);\n"
+            "      m3_store_float(output_data + output_offset, "
             "p.output.dtype, sum);\n"
+            "    }\n"
             "  }\n"
             "}\n"
             "#pragma clang fp contract(on)\n";
 
-    return [support stringByAppendingString:kernel];
+    NSString *source = [support stringByAppendingString:kernel_head];
+
+    return [source stringByAppendingString:kernel_tail];
 }
 
 m3_status m3_metal_prepare_attention(m3_metal_context *context,
@@ -256,6 +298,45 @@ static void m3_metal_attention_parameters_init(
     parameters->causal = op->causal ? 1U : 0U;
 }
 
+static m3_status m3_metal_attention_dispatch(
+    id<MTLComputeCommandEncoder> encoder,
+    id<MTLComputePipelineState> pipeline, size_t row_count,
+    uint64_t depth, m3_error *error)
+{
+    NSUInteger capacity;
+    NSUInteger threads;
+    NSUInteger width;
+
+    if (row_count == 0U) {
+        return M3_STATUS_OK;
+    }
+    if (row_count > UINT32_MAX) {
+        return m3_error_set(error, M3_STATUS_OUT_OF_RANGE,
+                            "Metal dispatch grid exceeds 32-bit indexing");
+    }
+    if (encoder == nil || pipeline == nil) {
+        return m3_error_set(error, M3_STATUS_INTERNAL,
+                            "Metal dispatch resources are unavailable");
+    }
+    capacity = pipeline.maxTotalThreadsPerThreadgroup;
+    width = pipeline.threadExecutionWidth;
+    if (capacity == 0U || width == 0U) {
+        return m3_error_set(error, M3_STATUS_INTERNAL,
+                            "Metal pipeline has no dispatch capacity");
+    }
+    threads = depth < 256U ? (NSUInteger)depth : 256U;
+    if (threads < width) {
+        threads = width;
+    }
+    if (threads > capacity) {
+        threads = capacity;
+    }
+    [encoder setComputePipelineState:pipeline];
+    [encoder dispatchThreadgroups:MTLSizeMake((NSUInteger)row_count, 1U, 1U)
+             threadsPerThreadgroup:MTLSizeMake(threads, 1U, 1U)];
+    return M3_STATUS_OK;
+}
+
 m3_status m3_metal_encode_attention(const m3_metal_context *context,
                                      id<MTLComputeCommandEncoder> encoder,
                                      const m3_command *command,
@@ -307,5 +388,7 @@ m3_status m3_metal_encode_attention(const m3_metal_context *context,
     [encoder setBuffer:mask offset:0U atIndex:3U];
     [encoder setBuffer:output offset:0U atIndex:4U];
     [encoder setBytes:&parameters length:sizeof(parameters) atIndex:5U];
-    return m3_metal_dispatch_1d(encoder, pipeline, work_count, error);
+    return m3_metal_attention_dispatch(
+        encoder, pipeline, work_count, op->query->metadata.shape[3],
+        error);
 }
