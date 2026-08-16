@@ -2,14 +2,15 @@
 
 #include "m3_music3_internal.h"
 
+#include "m3_provider.h"
 #include "m3_weight_stage_internal.h"
 
-static m3_status m3_music3_create_metal(void *context,
-                                         m3_backend **backend,
-                                         m3_error *error)
+static m3_status m3_music3_create_backend(void *context,
+                                           m3_backend **backend,
+                                           m3_error *error)
 {
     (void)context;
-    return m3_backend_create_metal(backend, error);
+    return m3_backend_create_preferred(true, true, backend, error);
 }
 
 static m3_status m3_music3_inspect_model(void *context, const char *root,
@@ -146,7 +147,7 @@ const m3_music3_operations *m3_music3_production_operations(void)
 {
     static const m3_music3_operations operations = {
         NULL,
-        m3_music3_create_metal,
+        m3_music3_create_backend,
         m3_music3_inspect_model,
         m3_music3_inspect_weights,
         m3_music3_load_tokenizer,
